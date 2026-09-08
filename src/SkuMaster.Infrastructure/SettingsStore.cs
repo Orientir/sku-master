@@ -13,8 +13,21 @@ public sealed class SettingsStore
         try
         {
             var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(path)) ?? throw new InvalidDataException("Налаштування порожні.");
+            string? warning = null;
+            if (settings.SchemaVersion == 1 && settings.Export is not null)
+            {
+                settings.Export.OnlyChanged = true;
+                settings.SchemaVersion = 2;
+            }
+            if (settings.SchemaVersion == 2 && settings.Rules is { } rules)
+            {
+                var defaults = new RuleSettings();
+                if (!StatusCatalog.IsAllowed(rules.UnavailableStatus, false)) { rules.UnavailableStatus = defaults.UnavailableStatus; warning = "Недопустимі статуси у старих налаштуваннях замінено початковими. Перевірте правила обробки."; }
+                if (!StatusCatalog.IsAllowed(rules.MatchStatus)) { rules.MatchStatus = defaults.MatchStatus; warning = "Недопустимі статуси у старих налаштуваннях замінено початковими. Перевірте правила обробки."; }
+                if (!StatusCatalog.IsAllowed(rules.ReplacementStatus)) { rules.ReplacementStatus = defaults.ReplacementStatus; warning = "Недопустимі статуси у старих налаштуваннях замінено початковими. Перевірте правила обробки."; }
+            }
             Validate(settings);
-            return (settings, null);
+            return (settings, warning);
         }
         catch (Exception ex) when (ex is InvalidDataException or JsonException or IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         { return (new AppSettings(), "Не вдалося прочитати налаштування або їхня версія не підтримується. Відновлено початкові значення."); }
@@ -35,11 +48,12 @@ public sealed class SettingsStore
 
     private static void Validate(AppSettings s)
     {
-        if (s is null || s.SchemaVersion != 1 || s.OperationId != "sku-status" || s.Rules is null || s.CsvInput is null || s.OneC is null || s.Supplier is null || s.Export is null)
+        if (s is null || s.SchemaVersion != 2 || s.OperationId != "sku-status" || s.Rules is null || s.CsvInput is null || s.OneC is null || s.Supplier is null || s.Export is null)
             throw new InvalidDataException("Версія або структура налаштувань не підтримується.");
         if (string.IsNullOrWhiteSpace(s.Rules.SkuColumn) || string.IsNullOrWhiteSpace(s.Rules.StatusColumn) || s.Rules.SkuColumn == s.Rules.StatusColumn || string.IsNullOrWhiteSpace(s.Rules.UnavailableStatus) || s.Rules.MatchStatus is null || s.Rules.ReplacementStatus is null)
             throw new InvalidDataException("Перевірте назви колонок і статус недоступності в налаштуваннях.");
         if (s.CsvInput.Delimiter != "auto") FileService.ValidateDelimiter(s.CsvInput.Delimiter);
+        StatusCatalog.ValidateRules(s.Rules);
         if (s.CsvInput.EncodingName != "auto") _ = FileService.GetEncoding(s.CsvInput.EncodingName);
         if (s.OneC.SheetName is null || s.Supplier.SheetName is null) throw new InvalidDataException("Некоректне ім’я аркуша.");
         if (s.Export.Format is not ("csv" or "xlsx")) throw new InvalidDataException("Невідомий формат експорту.");

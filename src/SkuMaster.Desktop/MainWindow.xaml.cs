@@ -3,6 +3,8 @@ using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using SkuMaster.Core;
 using Microsoft.Win32;
 
 namespace SkuMaster.Desktop;
@@ -10,11 +12,13 @@ public partial class MainWindow : Window
 {
     private readonly MainViewModel model;
     private readonly UpdateService updates = new();
+    private readonly Action<string> copyText;
     public MainWindow() : this(null) { }
-    public MainWindow(MainViewModel? viewModel)
+    public MainWindow(MainViewModel? viewModel, Action<string>? clipboardWriter = null)
     {
         InitializeComponent();
         model = viewModel ?? new();
+        copyText = clipboardWriter ?? Clipboard.SetText;
         DataContext = model;
         AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(SettingsText_Changed));
         VersionLabel.Text = $"v{Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}";
@@ -31,7 +35,8 @@ public partial class MainWindow : Window
     }
     private void SettingsText_Changed(object sender, TextChangedEventArgs e)
     {
-        if (IsLoaded && !model.IsBusy) model.Invalidate();
+        if (IsLoaded && !model.IsBusy && e.OriginalSource is DependencyObject source
+            && (FilesPanel.IsAncestorOf(source) || SettingsPanel.IsAncestorOf(source))) model.Invalidate();
     }
     private void Settings_Changed(object sender, RoutedEventArgs e)
     {
@@ -44,13 +49,41 @@ public partial class MainWindow : Window
     }
     private async void Save_Click(object sender, RoutedEventArgs e)
     {
+        CommitFocusedStatus();
         var xlsx = model.Settings.Export.Format == "xlsx";
         var dialog = new SaveFileDialog { Filter = xlsx ? "Excel (*.xlsx)|*.xlsx" : "CSV (*.csv)|*.csv", DefaultExt = xlsx ? ".xlsx" : ".csv", AddExtension = true, OverwritePrompt = true, FileName = Path.GetFileNameWithoutExtension(model.SitePath) + "_оновлено" };
         if (dialog.ShowDialog(this) == true) await model.SaveAsync(dialog.FileName);
     }
     private void Cancel_Click(object sender, RoutedEventArgs e) => model.Cancel();
+    private void ResetFilters_Click(object sender, RoutedEventArgs e) => model.ResetFilters();
+    private void Summary_Click(object sender, RoutedEventArgs e)
+    {
+        CommitFocusedStatus();
+        model.SelectSummary(int.Parse((string)((Button)sender).Tag));
+    }
+    private void CopySku_Click(object sender, RoutedEventArgs e)
+    {
+        if (((Button)sender).DataContext is not StatusChange row) return;
+        try { copyText(row.Sku); model.Message = $"SKU «{row.Sku}» скопійовано."; }
+        catch (System.Runtime.InteropServices.ExternalException) { model.Message = "Буфер обміну зайнятий. Натисніть SKU ще раз."; }
+    }
+    private void CommitFocusedStatus()
+    {
+        if (Keyboard.FocusedElement is ComboBox { Name: "StatusEditor" } box) CommitStatus(box);
+    }
+    private void CommitStatus(ComboBox box)
+    {
+        if (box.DataContext is StatusChange row && box.SelectedValue is string status) model.EditStatus(row.RowNumber, status);
+    }
+    private void Status_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        var box = (ComboBox)sender;
+        if (box.IsLoaded && !box.IsDropDownOpen) CommitStatus(box);
+    }
+    private void Status_DropDownClosed(object? sender, EventArgs e) => CommitStatus((ComboBox)sender!);
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
+        CommitFocusedStatus();
         if (model.IsBusy) { model.Message = "Дочекайтеся завершення або скасуйте поточну операцію."; e.Cancel = true; return; }
         if (model.UnsavedResult && MessageBox.Show(this, "Результат ще не збережено. Закрити програму?", "Незбережений результат", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) { e.Cancel = true; return; }
         model.PersistSettings();
@@ -59,6 +92,7 @@ public partial class MainWindow : Window
     private async void Update_Click(object sender, RoutedEventArgs e) => await CheckUpdatesAsync(true);
     private async Task CheckUpdatesAsync(bool manual)
     {
+        CommitFocusedStatus();
         UpdateButton.IsEnabled = false;
         try
         {

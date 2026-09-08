@@ -1,10 +1,14 @@
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '',
     [string]$RepositoryUrl = ''
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $projectRoot
+[xml]$properties = Get-Content -LiteralPath (Join-Path $projectRoot 'Directory.Build.props') -Raw
+if (!$Version) { $Version = [string]$properties.Project.PropertyGroup.Version }
+if (!$RepositoryUrl) { $RepositoryUrl = [string]$properties.Project.PropertyGroup.UpdateRepository.'#text' }
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must use MAJOR.MINOR.PATCH.' }
 if ($RepositoryUrl -and $RepositoryUrl -notmatch '^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/?$') { throw 'RepositoryUrl must be a public GitHub repository URL.' }
 $sdk = if (Test-Path '.tools/dotnet/dotnet.exe') { Join-Path $projectRoot '.tools/dotnet/dotnet.exe' } else { 'dotnet' }
 $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
@@ -20,6 +24,6 @@ if (!(Test-Path $vpk)) {
     & $sdk tool install vpk --version 1.2.0 --tool-path .tools/vpk --configfile NuGet.Config
     if ($LASTEXITCODE -ne 0) { throw 'Velopack tool installation failed.' }
 }
-& $vpk pack --packId SkuMaster --packVersion $Version --packDir $publish --mainExe SkuMaster.exe --packTitle 'SKU Майстер' --packAuthors 'SKU Майстер' --outputDir $release
+& $vpk pack --packId SkuMaster --packVersion $Version --packDir $publish --mainExe SkuMaster.exe --packTitle 'SKU Майстер' --packAuthors 'SKU Майстер' --icon (Join-Path $projectRoot 'src/SkuMaster.Desktop/Assets/app.ico') --outputDir $release
 if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed.' }
 Write-Output "Installer and portable archive: $release"

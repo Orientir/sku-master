@@ -17,7 +17,7 @@ public sealed class FileService
         cancellationToken.ThrowIfCancellationRequested();
         if (!string.Equals(Path.GetExtension(path), ".csv", StringComparison.OrdinalIgnoreCase))
             throw new InvalidDataException("Експорт сайту має бути файлом CSV.");
-        var bytes = File.ReadAllBytes(path);
+        var bytes = ReadSnapshot(path, cancellationToken);
         var hasBom = bytes.AsSpan().StartsWith(new byte[] { 0xEF, 0xBB, 0xBF });
         var encodingName = settings.EncodingName == "auto" ? (hasBom ? "utf-8-bom" : "utf-8") : settings.EncodingName;
         var encoding = GetEncoding(encodingName);
@@ -48,8 +48,12 @@ public sealed class FileService
             ValidateDelimiter(delimiter);
             rows = ParseCsv(contents, delimiter[0], cancellationToken);
         }
-        if (rows.Count == 0) throw new InvalidDataException("CSV порожній: немає рядка заголовків.");
-        return new TableData(rows[0], rows.Skip(1).ToArray(), delimiter, encodingName);
+        if (rows.Count == 0) throw new InvalidDataException("CSV порожній.");
+        if (rows[0].Length < 2) throw new InvalidDataException("CSV має містити щонайменше дві колонки: SKU та статус.");
+        if (settings.HasHeader) return new TableData(rows[0], rows.Skip(1).ToArray(), delimiter, encodingName);
+        var headers = Enumerable.Range(0, rows[0].Length)
+            .Select(i => i == 0 ? "sku" : i == 1 ? "status" : $"column_{i + 1}").ToArray();
+        return new TableData(headers, rows, delimiter, encodingName, FirstDataRow: 1);
     });
 
     // A strict state machine rejects unclosed quotes, quotes inside unquoted fields,
@@ -104,7 +108,7 @@ public sealed class FileService
     public SourceData ReadSource(string path, SourceSettings settings, CancellationToken cancellationToken = default) => Guard(path, () =>
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var book = OpenWorkbook(path);
+        using var book = OpenWorkbook(path, cancellationToken);
         var sheet = string.IsNullOrEmpty(settings.SheetName) ? (book.NumberOfSheets > 0 ? book.GetSheetAt(0) : null) : book.GetSheet(settings.SheetName);
         if (sheet is null) throw new InvalidDataException("Вибраний аркуш відсутній у файлі. Виберіть аркуш повторно.");
         var skus = new HashSet<string>(StringComparer.Ordinal);
@@ -134,12 +138,33 @@ public sealed class FileService
         return Enumerable.Range(0, book.NumberOfSheets).Select(book.GetSheetName).ToArray();
     });
 
-    private static IWorkbook OpenWorkbook(string path)
+    private static IWorkbook OpenWorkbook(string path, CancellationToken cancellationToken = default)
     {
         if (Path.GetExtension(path).ToLowerInvariant() is not (".xls" or ".xlsx"))
             throw new InvalidDataException("Джерело має бути файлом XLS або XLSX.");
-        using var stream = File.OpenRead(path);
+        using var stream = new MemoryStream(ReadSnapshot(path, cancellationToken), writable: false);
         return WorkbookFactory.Create(stream);
+    }
+
+    private static byte[] ReadSnapshot(string path, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        using var source = new SharedInputFile(path);
+        var input = source.Stream;
+        var length = input.Length;
+        var modified = File.GetLastWriteTimeUtc(path);
+        using var snapshot = new MemoryStream();
+        var buffer = new byte[65536];
+        int read;
+        while ((read = input.Read(buffer, 0, buffer.Length)) != 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            snapshot.Write(buffer, 0, read);
+        }
+        cancellationToken.ThrowIfCancellationRequested();
+        if (snapshot.Length != length || input.Length != length || File.GetLastWriteTimeUtc(path) != modified)
+            throw new InvalidDataException("Файл змінився під час читання. Дочекайтеся завершення збереження в іншій програмі та повторіть перевірку.");
+        return snapshot.ToArray();
     }
 
     public void Export(TableData table, string path, ExportSettings settings, IReadOnlyList<string> sourcePaths, CancellationToken cancellationToken = default) => Guard(path, () =>
@@ -239,6 +264,8 @@ public sealed class FileService
         try { return action(); }
         catch (OperationCanceledException) { throw; }
         catch (InvalidDataException ex) { throw new InvalidDataException($"{Path.GetFileName(path)}: {ex.Message}", ex); }
+        catch (IOException ex) when ((ex.HResult & 0xFFFF) is 32 or 33)
+        { throw new InvalidDataException($"Файл «{Path.GetFileName(path)}» заблоковано в іншій програмі. Закрийте його там та повторіть спробу.", ex); }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         { throw new InvalidDataException($"Не вдалося обробити файл «{Path.GetFileName(path)}». Перевірте формат, доступ до файлу та вільне місце на диску.", ex); }
     }

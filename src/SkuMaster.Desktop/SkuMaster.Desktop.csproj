@@ -7,8 +7,10 @@
     <AssemblyName>SkuMaster</AssemblyName>
     <Product>SKU Майстер</Product>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Resource Include="Assets/app.ico" />
     <ProjectReference Include="../SkuMaster.Infrastructure/SkuMaster.Infrastructure.csproj" />
     <PackageReference Include="Velopack" Version="1.2.0" />
     <AssemblyMetadata Include="UpdateRepository" Value="$(UpdateRepository)" />

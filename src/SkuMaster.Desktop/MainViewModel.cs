@@ -6,18 +6,25 @@ using SkuMaster.Infrastructure;
 namespace SkuMaster.Desktop;
 
 public sealed record Choice(string Value, string Label);
+public sealed record StatusFilterOption(string? Value, string Label);
 
 public sealed class MainViewModel : ObservableObject
 {
     private readonly FileService files = new();
     private readonly SettingsStore settingsStore;
     private readonly WorkflowState state = new();
+    private ResultReview? review;
     private CancellationTokenSource? cancellation;
     private string sitePath = "", oneCPath = "", supplierPath = "";
     private string message = "Додайте три файли, щоб перевірити наявність товарів.";
     private bool saving;
     private string? checkedSignature;
     private int filter;
+    private string searchText = "";
+    private static readonly StatusFilterOption AllOldStatuses = new(null, "Усі старі статуси");
+    private static readonly StatusFilterOption AllNewStatuses = new(null, "Усі нові статуси");
+    private StatusFilterOption selectedOldStatus = AllOldStatuses, selectedNewStatus = AllNewStatuses;
+    private IReadOnlyList<StatusChange> filteredChanges = [];
     private IReadOnlyList<string> warnings = [];
     private string[] oneCSheets = [], supplierSheets = [], siteColumns = [];
 
@@ -43,23 +50,81 @@ public sealed class MainViewModel : ObservableObject
     public bool HasResult => state.Result != null;
     public bool CanSave => state.CanExport && !saving;
     public bool UnsavedResult => state.UnsavedResult;
+    public bool ExportOnlyChanged
+    {
+        get => Settings.Export.OnlyChanged;
+        set { if (Settings.Export.OnlyChanged != value) { Settings.Export.OnlyChanged = value; Notify(); } }
+    }
     public OperationResult? Summary => state.Result;
     public IReadOnlyList<string> Warnings => warnings;
     public int WarningCount => warnings.Count;
-    public int Filter { get => filter; set { if (Set(ref filter, value)) Notify(nameof(Changes)); } }
-    public IEnumerable<StatusChange> Changes => state.Result?.Changes.Where(x => Filter == 0 ||
-        (Filter == 1 && x.Kind == ChangeKind.Unavailable) || (Filter == 2 && x.Kind == ChangeKind.Available)) ?? [];
+    public int Filter { get => filter; set { if (Set(ref filter, value)) RefreshFilters(); } }
+    public string SearchText { get => searchText; set { if (Set(ref searchText, value ?? "")) RefreshFilters(); } }
+    public StatusFilterOption SelectedOldStatus { get => selectedOldStatus; set { if (Set(ref selectedOldStatus, value ?? AllOldStatuses)) RefreshFilters(); } }
+    public StatusFilterOption SelectedNewStatus { get => selectedNewStatus; set { if (Set(ref selectedNewStatus, value ?? AllNewStatuses)) RefreshFilters(); } }
+    public IReadOnlyList<StatusFilterOption> OldStatusOptions { get; private set; } = [AllOldStatuses];
+    public IReadOnlyList<StatusFilterOption> NewStatusOptions { get; private set; } = [AllNewStatuses];
+    public IReadOnlyList<StatusChange> Changes => filteredChanges;
+    public string FilterSummary => $"Показано {filteredChanges.Count:N0} із {state.Result?.Total ?? 0:N0} рядків · {FilterLabel}";
+    public string FilterLabel => Filter switch { 1 => "Стали недоступними", 2 => "Знову доступні", 3 => "Перевірено", 4 => "Без змін", _ => "Усі зміни" };
+    public bool NoMatches => HasResult && filteredChanges.Count == 0;
+    public string EmptyResultMessage => "За цими умовами рядків не знайдено. Оберіть інший блок або скиньте фільтри.";
+    public void ResetFilters()
+    {
+        searchText = ""; filter = 0; selectedOldStatus = AllOldStatuses; selectedNewStatus = AllNewStatuses;
+        foreach (var property in new[] { nameof(SearchText), nameof(Filter), nameof(SelectedOldStatus), nameof(SelectedNewStatus) }) Notify(property);
+        RefreshFilters();
+    }
+    public void SelectSummary(int kind)
+    {
+        ResetFilters();
+        Filter = kind;
+    }
+    public void EditStatus(int rowNumber, string status)
+    {
+        if (IsBusy || !HasResult || review is null || !review.SetStatus(rowNumber, status)) return;
+        state.Complete(review.Result);
+        PrepareFilterOptions(false);
+        Message = $"Статус у рядку {rowNumber} змінено. Усього змін: {review.Result.Changed:N0}. Збережіть результат.";
+        Refresh();
+    }
+    private void RefreshFilters()
+    {
+        filteredChanges = ChangeQuery.Apply(HasResult ? review?.Rows ?? [] : [], SearchText, Filter, SelectedOldStatus.Value, SelectedNewStatus.Value);
+        foreach (var property in new[] { nameof(Changes), nameof(FilterSummary), nameof(FilterLabel), nameof(NoMatches), nameof(EmptyResultMessage) }) Notify(property);
+    }
+    private void PrepareFilterOptions(bool reset = true)
+    {
+        static StatusFilterOption[] Options(IEnumerable<string> values, StatusFilterOption all) =>
+            [all, .. values.Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal)
+                .Select(x => new StatusFilterOption(x, x.Length == 0 ? "(порожньо)" : x))];
+        OldStatusOptions = Options(review?.Rows.Select(x => x.OldStatus) ?? [], AllOldStatuses);
+        NewStatusOptions = Options(review?.Rows.Select(x => x.NewStatus) ?? [], AllNewStatuses);
+        var old = selectedOldStatus; var next = selectedNewStatus;
+        Notify(nameof(OldStatusOptions)); Notify(nameof(NewStatusOptions));
+        if (reset) ResetFilters();
+        else
+        {
+            SelectedOldStatus = OldStatusOptions.FirstOrDefault(x => x.Value == old.Value) ?? AllOldStatuses;
+            SelectedNewStatus = NewStatusOptions.FirstOrDefault(x => x.Value == next.Value) ?? AllNewStatuses;
+            Notify(nameof(SelectedOldStatus)); Notify(nameof(SelectedNewStatus));
+        }
+    }
     public static Choice[] InputDelimiters { get; } = [new("auto", "Визначити автоматично"), new(";", "Крапка з комою (;)"), new(",", "Кома (,)"), new("\t", "Табуляція")];
     public static Choice[] InputEncodings { get; } = [new("auto", "Визначити автоматично"), new("utf-8", "UTF-8"), new("utf-8-bom", "UTF-8 з BOM"), new("windows-1251", "Windows-1251")];
     public static Choice[] OutputDelimiters { get; } = [new("source", "Як у файлі сайту"), .. InputDelimiters.Skip(1)];
     public static Choice[] OutputEncodings { get; } = [new("source", "Як у файлі сайту"), .. InputEncodings.Skip(1)];
     public static Choice[] Formats { get; } = [new("csv", "CSV"), new("xlsx", "Excel (.xlsx)")];
+    public static IReadOnlyList<Choice> NonEmptyStatusChoices { get; } = StatusCatalog.Values.Select(x => new Choice(x, x)).ToArray();
+    public static IReadOnlyList<Choice> StatusChoices { get; } = new[] { new Choice("", "Без статусу") }.Concat(NonEmptyStatusChoices).ToArray();
 
     public void Invalidate()
     {
         if (IsBusy) return;
         var hadResult = HasResult;
         state.Invalidate();
+        review = null;
+        PrepareFilterOptions();
         checkedSignature = null;
         warnings = [];
         if (hadResult) Message = "Файли або налаштування змінено. Запустіть перевірку повторно.";
@@ -95,12 +160,18 @@ public sealed class MainViewModel : ObservableObject
     {
         if (!CanAnalyze) return;
         state.Begin();
+        review = null;
         warnings = [];
         cancellation = new();
         Refresh();
         try
         {
             var settings = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(Settings))!;
+            if (!settings.CsvInput.HasHeader)
+            {
+                settings.Rules.SkuColumn = "sku";
+                settings.Rules.StatusColumn = "status";
+            }
             var paths = new[] { SitePath, OneCPath, SupplierPath };
             var signature = Signature();
             var operation = Operations.SingleOrDefault(x => x.Id == settings.OperationId)
@@ -119,12 +190,20 @@ public sealed class MainViewModel : ObservableObject
                 available.UnionWith(supplier.Skus);
                 ((IProgress<string>)progress).Report("Порівнюємо SKU та готуємо зміни…");
                 var transformed = operation.Execute(table, available, settings.Rules, token);
-                return transformed with { Warnings = oneC.Warnings.Concat(supplier.Warnings).Concat(transformed.Warnings).ToArray() };
+                return transformed with
+                {
+                    Warnings = oneC.Warnings.Concat(supplier.Warnings).Concat(transformed.Warnings).ToArray(),
+                    SourcesBySku = available.ToDictionary(sku => sku, sku =>
+                        (oneC.Skus.Contains(sku) ? AvailabilitySource.OneC : AvailabilitySource.None)
+                        | (supplier.Skus.Contains(sku) ? AvailabilitySource.Supplier : AvailabilitySource.None), StringComparer.Ordinal)
+                };
             }, token);
             token.ThrowIfCancellationRequested();
             if (signature != Signature()) throw new IOException("Вхідний файл змінився під час перевірки. Запустіть перевірку повторно.");
             SiteColumns = result.Output.Headers;
-            state.Complete(result);
+            review = new ResultReview(result, settings.Rules.SkuColumn, settings.Rules.StatusColumn, settings.Rules.UnavailableStatus);
+            state.Complete(review.Result);
+            PrepareFilterOptions();
             checkedSignature = signature;
             warnings = result.Warnings;
             Message = result.Changed == 0 ? "Перевірку завершено. Статуси не потребують змін. Результат можна зберегти."
@@ -145,15 +224,15 @@ public sealed class MainViewModel : ObservableObject
         Refresh();
         try
         {
-            var output = state.Result!.Output;
             var export = JsonSerializer.Deserialize<ExportSettings>(JsonSerializer.Serialize(Settings.Export))!;
-            export.SkuColumn = Settings.Rules.SkuColumn;
-            export.StatusColumn = Settings.Rules.StatusColumn;
+            var output = state.Result!.GetExportTable(export.OnlyChanged);
+            export.SkuColumn = Settings.CsvInput.HasHeader ? Settings.Rules.SkuColumn : "sku";
+            export.StatusColumn = Settings.CsvInput.HasHeader ? Settings.Rules.StatusColumn : "status";
             var paths = new[] { SitePath, OneCPath, SupplierPath };
             Message = "Зберігаємо результат…";
             await Task.Run(() => files.Export(output, path, export, paths, cancellation.Token));
             state.MarkSaved();
-            Message = $"Готово! Файл збережено: {path}";
+            Message = $"Готово! Збережено {output.Rows.Count:N0} рядків: {path}";
             PersistSettings();
         }
         catch (OperationCanceledException) { Message = "Збереження скасовано."; }
@@ -167,11 +246,17 @@ public sealed class MainViewModel : ObservableObject
         try { settingsStore.Save(Settings); }
         catch (Exception ex) { Message += $" Налаштування не збережено: {DescribeError(ex)}"; }
     }
-    private string Signature() => JsonSerializer.Serialize(Settings) + string.Join("|", new[] { SitePath, OneCPath, SupplierPath }.Select(path =>
+    private string Signature()
     {
-        var info = new FileInfo(path);
-        return info.Exists ? $"{info.FullName}:{info.Length}:{info.LastWriteTimeUtc.Ticks}" : $"{path}:missing";
-    }));
+        var settings = JsonSerializer.SerializeToNode(Settings)!;
+        // Export scope selects already processed rows; it does not change their values.
+        settings[nameof(AppSettings.Export)]!.AsObject().Remove(nameof(ExportSettings.OnlyChanged));
+        return settings.ToJsonString() + string.Join("|", new[] { SitePath, OneCPath, SupplierPath }.Select(path =>
+        {
+            var info = new FileInfo(path);
+            return info.Exists ? $"{info.FullName}:{info.Length}:{info.LastWriteTimeUtc.Ticks}" : $"{path}:missing";
+        }));
+    }
     public static string DescribeError(Exception ex) => ex switch
     {
         UnauthorizedAccessException => "Немає доступу до файлу або папки. Оберіть інше місце збереження або перевірте дозволи.",
@@ -180,6 +265,7 @@ public sealed class MainViewModel : ObservableObject
     };
     private void Refresh()
     {
+        RefreshFilters();
         foreach (var name in new[] { nameof(IsBusy), nameof(CanEdit), nameof(CanAnalyze), nameof(HasResult), nameof(CanSave), nameof(UnsavedResult), nameof(Summary), nameof(Changes), nameof(Warnings), nameof(WarningCount) }) Notify(name);
     }
 }

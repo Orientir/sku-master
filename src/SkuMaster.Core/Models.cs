@@ -1,7 +1,7 @@
 namespace SkuMaster.Core;
 
 public sealed record TableData(string[] Headers, IReadOnlyList<string[]> Rows,
-    string Delimiter = ";", string EncodingName = "utf-8-bom");
+    string Delimiter = ";", string EncodingName = "utf-8-bom", int FirstDataRow = 2);
 
 public sealed class RuleSettings
 {
@@ -15,6 +15,7 @@ public sealed class RuleSettings
 
 public sealed class CsvInputSettings
 {
+    public bool HasHeader { get; set; }
     public string Delimiter { get; set; } = "auto";
     public string EncodingName { get; set; } = "auto";
 }
@@ -27,6 +28,7 @@ public sealed class SourceSettings
 
 public sealed class ExportSettings
 {
+    public bool OnlyChanged { get; set; } = true;
     public string Format { get; set; } = "csv";
     public bool IncludeHeaders { get; set; } = true;
     public string SkuHeader { get; set; } = "sku";
@@ -39,7 +41,7 @@ public sealed class ExportSettings
 
 public sealed class AppSettings
 {
-    public int SchemaVersion { get; set; } = 1;
+    public int SchemaVersion { get; set; } = 2;
     public string OperationId { get; set; } = "sku-status";
     public RuleSettings Rules { get; set; } = new();
     public CsvInputSettings CsvInput { get; set; } = new();
@@ -49,21 +51,47 @@ public sealed class AppSettings
 }
 
 public sealed record SourceData(IReadOnlySet<string> Skus, IReadOnlyList<string> Warnings);
-public enum ChangeKind { Unavailable, Available }
+public enum ChangeKind { Unavailable, Available, Unchanged, Manual }
+[Flags]
+public enum AvailabilitySource { None = 0, OneC = 1, Supplier = 2 }
 public sealed record StatusChange(int RowNumber, string Sku, string OldStatus, string NewStatus, ChangeKind Kind)
 {
     public string DisplayNewStatus => NewStatus.Length == 0 ? "(порожньо)" : NewStatus;
     public string DisplayOldStatus => OldStatus.Length == 0 ? "(порожньо)" : OldStatus;
-    public string Reason => Kind == ChangeKind.Unavailable ? "Немає в 1С та у постачальника" : "Знайдено в 1С або у постачальника";
+    public bool IsManual { get; init; }
+    public AvailabilitySource? Source { get; init; }
+    public string Reason => Source is { } source
+        ? (IsManual ? "Змінено вручну · " : Kind == ChangeKind.Unchanged ? "Без змін · " : "") +
+            (string.IsNullOrWhiteSpace(Sku) ? "Порожній SKU" : source switch
+            {
+                AvailabilitySource.OneC => "Знайдено в 1С",
+                AvailabilitySource.Supplier => "Знайдено у постачальника",
+                AvailabilitySource.OneC | AvailabilitySource.Supplier => "Знайдено в 1С та у постачальника",
+                _ => "Немає в 1С та у постачальника"
+            })
+        : IsManual ? "Змінено вручну" : Kind switch
+    {
+        ChangeKind.Unavailable => "Немає в 1С та у постачальника",
+        ChangeKind.Available => "Знайдено в 1С або у постачальника",
+        ChangeKind.Unchanged => "Без змін",
+        _ => "Змінено вручну"
+    };
 }
 public sealed record OperationResult(TableData Output, IReadOnlyList<StatusChange> Changes,
     IReadOnlyList<string> Warnings, int UniqueSkus)
 {
+    public IReadOnlyDictionary<string, AvailabilitySource>? SourcesBySku { get; init; }
     public int Total => Output.Rows.Count;
     public int Changed => Changes.Count;
     public int Unavailable => Changes.Count(x => x.Kind == ChangeKind.Unavailable);
     public int Available => Changes.Count(x => x.Kind == ChangeKind.Available);
     public int Unchanged => Total - Changed;
+    public TableData GetExportTable(bool onlyChanged)
+    {
+        if (!onlyChanged) return Output;
+        var changedRows = Changes.Select(x => x.RowNumber).ToHashSet();
+        return Output with { Rows = Output.Rows.Where((_, index) => changedRows.Contains(index + Output.FirstDataRow)).ToArray() };
+    }
 }
 public interface ITableOperation
 {

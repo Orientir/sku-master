@@ -1,5 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <ItemGroup>
+    <InternalsVisibleTo Include="SkuMaster.Tests" />
     <ProjectReference Include="../SkuMaster.Core/SkuMaster.Core.csproj" />
     <PackageReference Include="CsvHelper" Version="33.1.0" />
     <PackageReference Include="NPOI" Version="2.7.4" />
