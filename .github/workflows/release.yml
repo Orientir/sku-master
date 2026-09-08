@@ -1,0 +1,34 @@
+name: Windows release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - name: Verify
+        shell: pwsh
+        run: ./scripts/build.ps1
+      - name: Package
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: ./scripts/package.ps1 -Version $env:RELEASE_TAG.Substring(1) -RepositoryUrl "https://github.com/$env:RELEASE_REPOSITORY"
+      - name: Publish release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_REPOSITORY: ${{ github.repository }}
+        run: |
+          $version = $env:RELEASE_TAG.Substring(1)
+          $assets = Get-ChildItem -LiteralPath "artifacts/releases/$version" -File | Select-Object -ExpandProperty FullName
+          gh release create $env:RELEASE_TAG @assets --repo $env:RELEASE_REPOSITORY --title "SKU Майстер $version" --generate-notes
+          if ($LASTEXITCODE -ne 0) { throw 'Release publishing failed.' }
