@@ -9,7 +9,7 @@
   <Grid Margin="0,0,0,12">
    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
    <StackPanel><TextBlock Text="SKU Майстер" FontSize="24" FontWeight="Bold"/><TextBlock Text="Наявність товарів під контролем" Foreground="#61756D" Margin="0,4,0,0"/></StackPanel>
-   <Border Grid.Column="1" Background="#E3EDE5" CornerRadius="18" Padding="15,8" VerticalAlignment="Center"><TextBlock Text="●  Локальна обробка" Foreground="#126A55" FontSize="12"/></Border>
+   <ComboBox x:Name="ModuleSelector" Grid.Column="1" Width="300" VerticalAlignment="Center" SelectedIndex="0" SelectionChanged="Module_Changed" AutomationProperties.Name="Модуль програми"><ComboBoxItem Content="Оновлення статусів"/><ComboBoxItem Content="Товари, яких немає на сайті"/></ComboBox>
   </Grid>
   <TabControl x:Name="Tabs" Grid.Row="1" Background="Transparent" BorderThickness="0">
    <TabItem Header="1  Файли">
@@ -111,7 +111,6 @@
       <DataGrid x:Name="ResultsGrid" Grid.Row="2" ItemsSource="{Binding Changes}" AutomationProperties.Name="Зміни статусів"><DataGrid.Columns><DataGridTextColumn Header="Рядок" Binding="{Binding RowNumber}" Width="65"/><DataGridTemplateColumn Header="SKU" Width="*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="{Binding Sku}" Click="CopySku_Click" ToolTip="Натисніть, щоб скопіювати SKU" Padding="4,0" Background="Transparent" BorderBrush="Transparent" Foreground="#126A55" HorizontalAlignment="Left"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Поточний статус" Binding="{Binding DisplayOldStatus}" Width="1.3*"/><DataGridTemplateColumn Header="Новий статус ✎" Width="1.3*"><DataGridTemplateColumn.CellTemplate><DataTemplate><Grid><ComboBox x:Name="StatusEditor" ItemsSource="{x:Static local:MainViewModel.StatusChoices}" DisplayMemberPath="Label" SelectedValuePath="Value" SelectedValue="{Binding NewStatus, Mode=OneWay}" MinHeight="0" Padding="4,0" Margin="0" IsEditable="False" IsEnabled="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=Window}}" SelectionChanged="Status_SelectionChanged" DropDownClosed="Status_DropDownClosed" ToolTip="Оберіть статус. «Без статусу» очищує поле."/><TextBlock Text="{Binding NewStatus}" IsHitTestVisible="False" VerticalAlignment="Center" Margin="6,0,24,0" TextTrimming="CharacterEllipsis"><TextBlock.Style><Style TargetType="TextBlock"><Setter Property="Visibility" Value="Collapsed"/><Style.Triggers><DataTrigger Binding="{Binding SelectedIndex, ElementName=StatusEditor}" Value="-1"><Setter Property="Visibility" Value="Visible"/></DataTrigger></Style.Triggers></Style></TextBlock.Style></TextBlock></Grid></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Причина" Binding="{Binding Reason}" Width="1.7*"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="ToolTip" Value="{Binding Reason}"/><Setter Property="TextTrimming" Value="CharacterEllipsis"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn></DataGrid.Columns></DataGrid>
       <TextBlock Grid.Row="2" Text="{Binding EmptyResultMessage}" Visibility="{Binding NoMatches, Converter={StaticResource BoolVisibility}}" TextWrapping="Wrap" TextAlignment="Center" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="500" Margin="20,34,20,0" Foreground="#61756D" IsHitTestVisible="False"/>
      </Grid>
-     <Expander Grid.Row="3" Margin="0,6,0,0"><Expander.Header><TextBlock Text="{Binding WarningCount, StringFormat=Попередження ({0})}"/></Expander.Header><ListBox ItemsSource="{Binding Warnings}" MaxHeight="100" ScrollViewer.HorizontalScrollBarVisibility="Disabled"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Padding="4"/></DataTemplate></ListBox.ItemTemplate></ListBox></Expander>
     </Grid>
    </TabItem>
    <TabItem Header="Як користуватися">
@@ -128,17 +127,24 @@
      </StackPanel>
     </ScrollViewer>
    </TabItem>
-  </TabControl>
+   <TabItem Header="Попередження">
+    <Grid Margin="0,12,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+     <TextBlock Text="{Binding WarningCount, StringFormat=Попереджень: {0}}" Style="{StaticResource Hint}" Margin="0,0,0,8"/>
+     <ListBox x:Name="StatusWarningsList" Grid.Row="1" ItemsSource="{Binding Warnings}" ScrollViewer.VerticalScrollBarVisibility="Auto" ScrollViewer.HorizontalScrollBarVisibility="Disabled" HorizontalContentAlignment="Stretch"><ListBox.ItemTemplate><DataTemplate><TextBlock Text="{Binding}" TextWrapping="Wrap" Margin="5"/></DataTemplate></ListBox.ItemTemplate></ListBox>
+    </Grid>
+   </TabItem>
+  </TabControl><ContentControl x:Name="MissingModule" Grid.Row="1" Visibility="Collapsed"/>
   <Border Grid.Row="2" BorderBrush="#D6E1D8" BorderThickness="0,1,0,0" Padding="0,14,0,0" Margin="0,10,0,0">
    <StackPanel>
-    <ProgressBar IsIndeterminate="True" Height="3" Foreground="{StaticResource Accent}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,10"/>
-    <DockPanel Margin="0,0,0,10">
+    <ProgressBar x:Name="StatusProgress" IsIndeterminate="True" Height="3" Foreground="{StaticResource Accent}" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Margin="0,0,0,10"/>
+    <DockPanel x:Name="StatusMessage" Margin="0,0,0,10">
      <CheckBox DockPanel.Dock="Right" Content="Зберегти лише змінені товари" IsChecked="{Binding ExportOnlyChanged}" IsEnabled="{Binding CanEdit}" Margin="16,0,0,0" VerticalAlignment="Center" ToolTip="Вимкнено — усі товари. Увімкнено — лише рядки, де фактично змінився статус. Пошук і фільтри таблиці на експорт не впливають."/>
      <TextBlock Text="{Binding Message}" TextWrapping="Wrap" MaxHeight="60" VerticalAlignment="Center" AutomationProperties.LiveSetting="Polite"/>
     </DockPanel>
     <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
      <StackPanel Orientation="Horizontal" VerticalAlignment="Center"><TextBlock x:Name="VersionLabel" Foreground="#61756D" VerticalAlignment="Center" Margin="0,0,12,0"/><Button x:Name="UpdateButton" Content="Оновлення" Click="Update_Click" Padding="12,7"/><TextBlock x:Name="UpdateLabel" Foreground="#61756D" FontSize="11" MaxWidth="150" TextWrapping="Wrap" Margin="10,0,0,0" VerticalAlignment="Center"/></StackPanel>
-     <StackPanel Grid.Column="1" Orientation="Horizontal"><Button Content="Скасувати" Click="Cancel_Click" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Margin="0,0,10,0"/><Button Content="Перевірити файли" Click="Analyze_Click" IsEnabled="{Binding CanAnalyze}" Margin="0,0,10,0"/><Button Content="Зберегти результат…" Click="Save_Click" IsEnabled="{Binding CanSave}" Style="{StaticResource PrimaryButton}"/></StackPanel>
+     <StackPanel x:Name="StatusActions" Grid.Column="1" Orientation="Horizontal"><Button Content="Скасувати" Click="Cancel_Click" Visibility="{Binding IsBusy, Converter={StaticResource BoolVisibility}}" Margin="0,0,10,0"/><Button Content="Перевірити файли" Click="Analyze_Click" IsEnabled="{Binding CanAnalyze}" Margin="0,0,10,0"/><Button Content="Зберегти результат…" Click="Save_Click" IsEnabled="{Binding CanSave}" Style="{StaticResource PrimaryButton}"/></StackPanel>
+     <ContentControl x:Name="MissingActions" Grid.Column="1" Visibility="Collapsed"/>
     </Grid>
    </StackPanel>
   </Border>

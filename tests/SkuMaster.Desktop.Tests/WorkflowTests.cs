@@ -2,12 +2,14 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using NPOI.XSSF.UserModel;
 using SkuMaster.Core;
 using SkuMaster.Desktop;
+using SkuMaster.Desktop.MissingProducts;
 using SkuMaster.Infrastructure;
 using Xunit;
 
@@ -152,6 +154,7 @@ public sealed class WorkflowTests
         var dir = Path.Combine(Path.GetTempPath(), "SkuMaster-ui-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         MainWindow? window = null;
+        MissingProductsViewModel? missingModel = null;
         try
         {
             CreateInputs(dir);
@@ -160,7 +163,8 @@ public sealed class WorkflowTests
                 SitePath = Path.Combine(dir, "site.csv"), OneCPath = Path.Combine(dir, "onec.xlsx"), SupplierPath = Path.Combine(dir, "supplier.xlsx")
             };
             string? copiedSku = null;
-            window = new MainWindow(model, value => copiedSku = value) { Width = 980, Height = 640, Left = -10000, Top = -10000, ShowActivated = false };
+            missingModel = MissingProductsWorkflowTests.CreateModel(dir);
+            window = new MainWindow(model, value => copiedSku = value, missingModel) { Width = 980, Height = 640, Left = -10000, Top = -10000, ShowActivated = false };
             // Use the window's actual view model so event handlers and bindings share state.
             var actual = (MainViewModel)window.DataContext;
             actual.SitePath = model.SitePath;
@@ -271,10 +275,91 @@ public sealed class WorkflowTests
             tabs.SelectedIndex = 3;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Render(window, "05-guide-minimum");
+            tabs.SelectedIndex = 4;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var statusWarnings = (ListBox)window.FindName("StatusWarningsList");
+            statusWarnings.ItemsSource = Enumerable.Range(1, 60).Select(i => $"Рядок {i}: попередження про дані товару для перевірки прокрутки.").ToArray();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var statusWarningsScroll = Descendants<ScrollViewer>(statusWarnings).Single();
+            Assert.True(statusWarnings.ActualHeight > 100);
+            Assert.True(statusWarningsScroll.ScrollableHeight > 0);
+            statusWarningsScroll.ScrollToEnd();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.True(statusWarningsScroll.VerticalOffset > 0);
+            Render(window, "11-status-warnings-minimum");
+            var previousSummary = actual.Summary;
+            var selector = (ComboBox)window.FindName("ModuleSelector");
+            selector.SelectedIndex = 1;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var missingView = (MissingProductsView)((ContentControl)window.FindName("MissingModule")).Content;
+            Assert.Same(missingModel, missingView.DataContext);
+            Render(window, "06-missing-files-minimum");
+            await missingModel.AnalyzeAsync();
+            Assert.True(missingModel.HasResult, missingModel.Message);
+            Assert.Equal(3, missingModel.Products.Count);
+            var missingTabs = (TabControl)missingView.FindName("ModuleTabs");
+            missingTabs.SelectedIndex = 2;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Render(window, "07-missing-results-minimum");
+            var missingGrid = (DataGrid)missingView.FindName("ResultGrid");
+            var exclusionCheck = Descendants<CheckBox>(missingGrid).First();
+            exclusionCheck.IsChecked = true;
+            exclusionCheck.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(1, missingModel.ExclusionCount);
+            Assert.Equal(2, missingModel.Products.Count);
+            Assert.Equal(3, missingModel.Rows.Count);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            exclusionCheck = Descendants<CheckBox>(missingGrid).First();
+            Assert.True(exclusionCheck.IsChecked);
+            exclusionCheck.IsChecked = false;
+            exclusionCheck.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(0, missingModel.ExclusionCount);
+            Assert.Equal(3, missingModel.Products.Count);
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            exclusionCheck = Descendants<CheckBox>(missingGrid).First();
+            exclusionCheck.IsChecked = true;
+            exclusionCheck.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            foreach (var (tag, count) in new[] { ("0", 4), ("1", 1), ("2", 1), ("3", 2) })
+            {
+                missingModel.Search = "not found";
+                Descendants<Button>((UniformGrid)missingView.FindName("SummaryCards")).Single(x => Equals(x.Tag, tag)).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.Equal(count, missingModel.Rows.Count);
+                Assert.Equal("", missingModel.Search);
+            }
+            Assert.Same(previousSummary, actual.Summary);
+            selector.SelectedIndex = 0;
+            selector.SelectedIndex = 1;
+            Assert.True(actual.HasResult);
+            Assert.Equal(2, missingModel.Products.Count);
+            missingTabs.SelectedIndex = 3;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Render(window, "08-missing-exclusions-minimum");
+            missingTabs.SelectedIndex = 1;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Render(window, "09-missing-settings-minimum");
+            var formatChoice = Descendants<ComboBox>(missingView).Single(x => Equals(x.ToolTip, "Формат результату: артикул і назва"));
+            formatChoice.SelectedValue = "xlsx";
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.Equal("xlsx", missingModel.Settings.OutputFormat);
+            Assert.True(missingModel.HasResult);
+            missingTabs.SelectedIndex = 4;
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var warningsList = (ListBox)missingView.FindName("WarningsList");
+            warningsList.ItemsSource = Enumerable.Range(1, 60).Select(i => $"Артикул {i}: приклад довгого попередження для перевірки перенесення тексту та прокрутки списку.").ToArray();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            var warningsScroll = Descendants<ScrollViewer>(warningsList).Single();
+            Assert.True(warningsList.ActualHeight > 100);
+            Assert.True(warningsScroll.ScrollableHeight > 0);
+            warningsScroll.ScrollToEnd();
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            Assert.True(warningsScroll.VerticalOffset > 0);
+            Render(window, "10-missing-warnings-minimum");
+            missingModel.Invalidate();
             actual.Invalidate();
         }
         finally
         {
+            missingModel?.Invalidate();
             if (window != null) { ((MainViewModel)window.DataContext).Invalidate(); window.Close(); }
             app.Shutdown();
             Directory.Delete(dir, true);

@@ -4,7 +4,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <Version>1.0.9</Version>
+    <Version>1.1.3</Version>
     <UpdateRepository Condition="'$(UpdateRepository)' == ''">https://github.com/Orientir/sku-master</UpdateRepository>
   </PropertyGroup>
 </Project>

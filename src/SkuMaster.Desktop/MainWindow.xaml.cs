@@ -6,6 +6,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using SkuMaster.Core;
 using Microsoft.Win32;
+using SkuMaster.Desktop.MissingProducts;
 
 namespace SkuMaster.Desktop;
 public partial class MainWindow : Window
@@ -13,15 +14,33 @@ public partial class MainWindow : Window
     private readonly MainViewModel model;
     private readonly UpdateService updates = new();
     private readonly Action<string> copyText;
+    private MissingProductsView? missingView;
+    private readonly MissingProductsViewModel? injectedMissingModel;
     public MainWindow() : this(null) { }
-    public MainWindow(MainViewModel? viewModel, Action<string>? clipboardWriter = null)
+    public MainWindow(MainViewModel? viewModel, Action<string>? clipboardWriter = null, MissingProductsViewModel? missingModel = null)
     {
         InitializeComponent();
         model = viewModel ?? new();
+        injectedMissingModel = missingModel;
         copyText = clipboardWriter ?? Clipboard.SetText;
         DataContext = model;
         AddHandler(TextBox.TextChangedEvent, new TextChangedEventHandler(SettingsText_Changed));
         VersionLabel.Text = $"v{Assembly.GetExecutingAssembly().GetName().Version?.ToString(3)}";
+    }
+    private void Module_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (!IsLoaded) return;
+        CommitFocusedStatus();
+        var missing = ((ComboBox)sender).SelectedIndex == 1;
+        if (missing && missingView is null)
+        {
+            missingView = new MissingProductsView(injectedMissingModel ?? new MissingProductsViewModel());
+            MissingModule.Content = missingView;
+            MissingActions.Content = missingView.DetachActions();
+        }
+        MissingModule.Visibility = missing ? Visibility.Visible : Visibility.Collapsed;
+        MissingActions.Visibility = missing ? Visibility.Visible : Visibility.Collapsed;
+        Tabs.Visibility = StatusMessage.Visibility = StatusActions.Visibility = missing ? Visibility.Collapsed : Visibility.Visible;
     }
     private async void Browse_Click(object sender, RoutedEventArgs e)
     {
@@ -84,9 +103,10 @@ public partial class MainWindow : Window
     private void Window_Closing(object? sender, CancelEventArgs e)
     {
         CommitFocusedStatus();
-        if (model.IsBusy) { model.Message = "Дочекайтеся завершення або скасуйте поточну операцію."; e.Cancel = true; return; }
-        if (model.UnsavedResult && MessageBox.Show(this, "Результат ще не збережено. Закрити програму?", "Незбережений результат", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) { e.Cancel = true; return; }
+        if (model.IsBusy || missingView?.Model.IsBusy == true) { model.Message = "Дочекайтеся завершення або скасуйте поточну операцію."; if (missingView is not null) missingView.Model.Message = model.Message; e.Cancel = true; return; }
+        if ((model.UnsavedResult || missingView?.Model.UnsavedResult == true) && MessageBox.Show(this, "В одному з модулів є незбережений результат. Закрити програму?", "Незбережений результат", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) { e.Cancel = true; return; }
         model.PersistSettings();
+        missingView?.Model.PersistSettings();
     }
     private async void Window_Loaded(object sender, RoutedEventArgs e) => await CheckUpdatesAsync(false);
     private async void Update_Click(object sender, RoutedEventArgs e) => await CheckUpdatesAsync(true);
@@ -98,7 +118,7 @@ public partial class MainWindow : Window
         {
             var ready = await updates.CheckAndDownloadAsync(text => Dispatcher.Invoke(() => UpdateLabel.Text = text));
             if (!ready || !manual) return;
-            if (model.IsBusy || model.UnsavedResult) { UpdateLabel.Text = "Спочатку збережіть результат і завершіть обробку."; return; }
+            if (model.IsBusy || model.UnsavedResult || missingView?.Model.IsBusy == true || missingView?.Model.UnsavedResult == true) { UpdateLabel.Text = "Спочатку збережіть результат і завершіть обробку в обох модулях."; return; }
             if (MessageBox.Show(this, "Оновлення завантажено. Встановити та перезапустити програму?", "Оновлення", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
             {
                 model.PersistSettings();
