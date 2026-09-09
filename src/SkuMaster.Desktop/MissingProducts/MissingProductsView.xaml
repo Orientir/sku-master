@@ -61,7 +61,7 @@
      </UniformGrid>
      <DockPanel Grid.Row="1" Margin="0,0,0,8"><TextBox Text="{Binding Search, UpdateSourceTrigger=PropertyChanged}" ToolTip="Пошук артикула або назви" AutomationProperties.Name="Пошук відсутніх товарів"/></DockPanel>
      <DataGrid x:Name="ResultGrid" Grid.Row="2" ItemsSource="{Binding Rows}" SelectionMode="Extended" SelectionUnit="FullRow" IsEnabled="{Binding CanEdit}">
-      <DataGrid.Columns><DataGridTemplateColumn Header="Виключити" Width="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding IsExcluded, Mode=OneWay}" Click="Exclusion_Click" HorizontalAlignment="Center" Margin="0" AutomationProperties.Name="Виключити артикул"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Артикул" Binding="{Binding Sku}" Width="180"/><DataGridTextColumn Header="Назва" Binding="{Binding Name}" Width="*"/></DataGrid.Columns>
+      <DataGrid.Columns><DataGridTemplateColumn Header="Виключити" Width="100"><DataGridTemplateColumn.CellTemplate><DataTemplate><CheckBox IsChecked="{Binding IsExcluded, Mode=OneWay}" Click="Exclusion_Click" HorizontalAlignment="Center" Margin="0" AutomationProperties.Name="Виключити артикул"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTemplateColumn Header="Артикул" Width="180"><DataGridTemplateColumn.CellTemplate><DataTemplate><Button Content="{Binding Sku}" Click="CopySku_Click" ToolTip="Натисніть, щоб скопіювати артикул" Padding="4,0" Background="Transparent" BorderBrush="Transparent" Foreground="#126A55" HorizontalAlignment="Left"/></DataTemplate></DataGridTemplateColumn.CellTemplate></DataGridTemplateColumn><DataGridTextColumn Header="Назва" Binding="{Binding Name}" Width="*"/></DataGrid.Columns>
      </DataGrid>
      <StackPanel Grid.Row="3"><TextBlock Text="{Binding ResultCount}" Style="{StaticResource Hint}"/></StackPanel>
     </Grid>
@@ -69,8 +69,8 @@
    <TabItem Header="Виключення">
     <Grid Margin="0,12,0,0"><Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
      <TextBlock Text="{Binding ExclusionCount, StringFormat=Збережено {0:N0} артикулів. Цей список використовується при кожному пошуку.}" Style="{StaticResource Hint}" Margin="0,0,0,8"/>
-     <DockPanel Grid.Row="1" Margin="0,0,0,8"><Button DockPanel.Dock="Right" Content="Прибрати вибрані" Click="RemoveExclusions_Click" IsEnabled="{Binding CanEdit}" Margin="8,0,0,0"/><TextBox Text="{Binding ExclusionSearch, UpdateSourceTrigger=PropertyChanged}" ToolTip="Пошук у виключеннях"/></DockPanel>
-     <ListBox x:Name="ExclusionList" Grid.Row="2" ItemsSource="{Binding Exclusions}" SelectionMode="Extended" IsEnabled="{Binding CanEdit}"/>
+     <DockPanel Grid.Row="1" Margin="0,0,0,8"><Button DockPanel.Dock="Right" Content="Зберегти виключення…" Click="ExportExclusions_Click" IsEnabled="{Binding CanExportExclusions}" Margin="8,0,0,0" ToolTip="Зберегти весь список. Формат CSV / XLSX — у налаштуваннях."/><Button DockPanel.Dock="Right" Content="Прибрати вибрані" Click="RemoveExclusions_Click" IsEnabled="{Binding CanEdit}" Margin="8,0,0,0"/><TextBox Text="{Binding ExclusionSearch, UpdateSourceTrigger=PropertyChanged}" ToolTip="Пошук у виключеннях"/></DockPanel>
+     <ListBox x:Name="ExclusionList" Grid.Row="2" ItemsSource="{Binding Exclusions}" SelectionMode="Extended" IsEnabled="{Binding CanEdit}"><ListBox.ItemTemplate><DataTemplate><Button Content="{Binding}" Click="CopySku_Click" ToolTip="Натисніть, щоб скопіювати артикул" Padding="4,2" Background="Transparent" BorderBrush="Transparent" Foreground="#126A55" HorizontalAlignment="Left"/></DataTemplate></ListBox.ItemTemplate></ListBox>
     </Grid>
    </TabItem>
    <TabItem Header="Попередження">

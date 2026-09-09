@@ -34,7 +34,7 @@ public partial class MainWindow : Window
         var missing = ((ComboBox)sender).SelectedIndex == 1;
         if (missing && missingView is null)
         {
-            missingView = new MissingProductsView(injectedMissingModel ?? new MissingProductsViewModel());
+            missingView = new MissingProductsView(injectedMissingModel ?? new MissingProductsViewModel(), copyText);
             MissingModule.Content = missingView;
             MissingActions.Content = missingView.DetachActions();
         }

@@ -9,6 +9,37 @@ namespace SkuMaster.Desktop.Tests;
 
 public sealed class MissingProductsWorkflowTests
 {
+    [Theory]
+    [InlineData("csv")]
+    [InlineData("xlsx")]
+    public async Task ExportExclusionsIncludesHiddenRowsWithoutClearingUnsavedSearch(string format)
+    {
+        var dir = Directory.CreateTempSubdirectory("exclusions-export-").FullName;
+        try
+        {
+            var model = CreateModel(dir);
+            await model.AnalyzeAsync();
+            model.SetExcluded("002", true); model.SetExcluded("003", true);
+            model.ExclusionSearch = "002";
+            model.Settings.OutputFormat = format;
+            var path = Path.Combine(dir, "exclusions." + format);
+            await model.ExportExclusionsAsync(path);
+            Assert.True(model.UnsavedResult);
+            var files = new MissingProductsFileService();
+            var options = new MissingFileOptions { FirstDataRow = 2 };
+            var rows = format == "csv" ? files.ReadSite(path, options) : files.ReadExclusions(path, options);
+            Assert.Equal(new[] { "002", "003" }, rows);
+            if (format == "xlsx")
+            {
+                using var book = new XSSFWorkbook(path);
+                Assert.Equal(1, book.GetSheetAt(0).GetRow(0).LastCellNum);
+            }
+            var original = File.ReadAllBytes(model.SupplierPath);
+            await model.ExportExclusionsAsync(model.SupplierPath);
+            Assert.Equal(original, File.ReadAllBytes(model.SupplierPath));
+        }
+        finally { Directory.Delete(dir, true); }
+    }
     [Fact]
     public async Task SummaryScopesAndReversibleCheckboxesDoNotChangeExportScope()
     {

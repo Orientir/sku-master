@@ -74,6 +74,7 @@ public sealed class MissingProductsViewModel : ObservableObject
     public bool InputsValid { get => inputsValid; set { inputsValid = value; Refresh(); } }
     public bool CanAnalyze => !busy && inputsValid && exclusionsReady && !string.IsNullOrWhiteSpace(SitePath) && !string.IsNullOrWhiteSpace(SupplierPath);
     public bool CanExport => !busy && result is not null;
+    public bool CanExportExclusions => !busy && exclusionsReady;
     public bool HasResult => result is not null;
     public bool UnsavedResult => dirty;
     public MissingSearchResult? Summary => result;
@@ -203,6 +204,23 @@ public sealed class MissingProductsViewModel : ObservableObject
         finally { busy = false; cancellation.Dispose(); cancellation = null; Refresh(); }
     }
     public void Cancel() => cancellation?.Cancel();
+    public async Task ExportExclusionsAsync(string path)
+    {
+        if (!CanExportExclusions) return;
+        busy = true; cancellation = new(); Refresh();
+        try
+        {
+            var output = exclusions.ToArray();
+            var format = Settings.OutputFormat;
+            var paths = new[] { SitePath, SupplierPath, ExclusionPath, exclusionsStore.FilePath, settingsStore.FilePath };
+            await Task.Run(() => files.ExportExclusions(output, path, format, paths, cancellation.Token));
+            Message = $"Збережено {output.Length:N0} виключень: {path}";
+            PersistSettings();
+        }
+        catch (OperationCanceledException) { Message = "Збереження виключень скасовано."; }
+        catch (Exception ex) { Message = DescribeError(ex); }
+        finally { busy = false; cancellation.Dispose(); cancellation = null; Refresh(); }
+    }
     public void PersistSettings()
     {
         try { settingsStore.Save(Settings); }
@@ -211,6 +229,7 @@ public sealed class MissingProductsViewModel : ObservableObject
     private void Refresh()
     {
         Notify(nameof(Rows));
+        Notify(nameof(CanExportExclusions));
         foreach (var property in new[] { nameof(IsBusy), nameof(CanEdit), nameof(CanAnalyze), nameof(CanExport), nameof(HasResult), nameof(UnsavedResult), nameof(Summary), nameof(Products), nameof(Exclusions), nameof(ExclusionCount), nameof(ResultCount), nameof(Warnings) }) Notify(property);
     }
 }

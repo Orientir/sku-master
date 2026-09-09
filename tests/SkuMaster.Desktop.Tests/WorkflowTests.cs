@@ -302,6 +302,9 @@ public sealed class WorkflowTests
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Render(window, "07-missing-results-minimum");
             var missingGrid = (DataGrid)missingView.FindName("ResultGrid");
+            var copyMissing = Descendants<Button>(missingGrid).First(x => x.DataContext is MissingProductRow);
+            copyMissing.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(((MissingProductRow)copyMissing.DataContext).Sku, copiedSku);
             var exclusionCheck = Descendants<CheckBox>(missingGrid).First();
             exclusionCheck.IsChecked = true;
             exclusionCheck.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -334,6 +337,9 @@ public sealed class WorkflowTests
             missingTabs.SelectedIndex = 3;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Render(window, "08-missing-exclusions-minimum");
+            var copyExcluded = Descendants<Button>((ListBox)missingView.FindName("ExclusionList")).First();
+            copyExcluded.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal((string)copyExcluded.DataContext, copiedSku);
             missingTabs.SelectedIndex = 1;
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
             Render(window, "09-missing-settings-minimum");

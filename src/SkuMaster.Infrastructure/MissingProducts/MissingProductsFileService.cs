@@ -128,7 +128,11 @@ public sealed class MissingProductsFileService
         return data;
     }
 
-    public void Export(IReadOnlyList<MissingProduct> products, string path, string format, IReadOnlyList<string> protectedPaths, CancellationToken token = default) => Guard(path, () =>
+    public void Export(IReadOnlyList<MissingProduct> products, string path, string format, IReadOnlyList<string> protectedPaths, CancellationToken token = default)
+        => ExportTable(products, path, format, protectedPaths, false, token);
+    public void ExportExclusions(IReadOnlyList<string> skus, string path, string format, IReadOnlyList<string> protectedPaths, CancellationToken token = default)
+        => ExportTable(skus.Select(sku => new MissingProduct(sku, "")).ToArray(), path, format, protectedPaths, true, token);
+    private void ExportTable(IReadOnlyList<MissingProduct> products, string path, string format, IReadOnlyList<string> protectedPaths, bool exclusionsOnly, CancellationToken token) => Guard(path, () =>
     {
         var fullPath = Path.GetFullPath(path);
         if (protectedPaths.Any(p => !string.IsNullOrWhiteSpace(p) && string.Equals(Path.GetFullPath(p), fullPath, StringComparison.OrdinalIgnoreCase))) throw new InvalidDataException("Не можна перезаписувати вихідний файл. Оберіть інше ім’я результату.");
@@ -140,7 +144,7 @@ public sealed class MissingProductsFileService
             {
                 using var writer = new StreamWriter(stream, new UTF8Encoding(true), leaveOpen: true);
                 using var csv = new CsvWriter(writer, new CsvConfiguration(CultureInfo.InvariantCulture) { Delimiter = ";", NewLine = "\r\n" }, leaveOpen: true);
-                void Row(string sku, string name) { token.ThrowIfCancellationRequested(); csv.WriteField(sku); csv.WriteField(name); csv.NextRecord(); }
+                void Row(string sku, string name) { token.ThrowIfCancellationRequested(); csv.WriteField(sku); if (!exclusionsOnly) csv.WriteField(name); csv.NextRecord(); }
                 Row("Артикул", "Назва");
                 foreach (var product in products) Row(product.Sku, product.Name);
             }
@@ -148,7 +152,7 @@ public sealed class MissingProductsFileService
             {
                 if (products.Count > 1048575) throw new InvalidDataException("Забагато рядків для XLSX. Оберіть CSV.");
                 using var book = new XSSFWorkbook();
-                var sheet = book.CreateSheet("Відсутні товари");
+                var sheet = book.CreateSheet(exclusionsOnly ? "Виключення" : "Відсутні товари");
                 int index = 0;
                 void Row(string sku, string name)
                 {
@@ -156,7 +160,7 @@ public sealed class MissingProductsFileService
                     if (sku.Length > 32767 || name.Length > 32767) throw new InvalidDataException("Текст клітинки перевищує обмеження XLSX. Оберіть CSV.");
                     var row = sheet.CreateRow(index++);
                     row.CreateCell(0, CellType.String).SetCellValue(sku);
-                    row.CreateCell(1, CellType.String).SetCellValue(name);
+                    if (!exclusionsOnly) row.CreateCell(1, CellType.String).SetCellValue(name);
                 }
                 Row("Артикул", "Назва");
                 foreach (var product in products) Row(product.Sku, product.Name);
