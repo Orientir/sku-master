@@ -10,6 +10,8 @@
     <ApplicationIcon>Assets/app.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
+    <Content Include="../SkuMaster.Ui/dist/**/*" Link="WebUi/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
     <Resource Include="Assets/app.ico" />
     <ProjectReference Include="../SkuMaster.Infrastructure/SkuMaster.Infrastructure.csproj" />
     <PackageReference Include="Velopack" Version="1.2.0" />

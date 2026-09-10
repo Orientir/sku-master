@@ -23,6 +23,17 @@ public sealed class MissingProductsViewModel : ObservableObject
     private int filter = 3;
     private HashSet<string> visibleScope = new(StringComparer.Ordinal);
     public int Filter => filter;
+    public object[] AllReviewRows
+    {
+        get
+        {
+            var excluded = exclusions.ToHashSet(StringComparer.Ordinal);
+            var onSite = site.Select(x => x.Trim()).ToHashSet(StringComparer.Ordinal);
+            return supplier.Where(x => !string.IsNullOrWhiteSpace(x.Sku)).DistinctBy(x => x.Sku.Trim(), StringComparer.Ordinal)
+                .Select(x => (object)new { sku = x.Sku.Trim(), name = x.Name, excluded = excluded.Contains(x.Sku.Trim()), onSite = onSite.Contains(x.Sku.Trim()) }).ToArray();
+        }
+    }
+    public IReadOnlyList<string> SavedExclusions => exclusions;
     public IReadOnlyList<MissingProductRow> Rows
     {
         get
@@ -133,8 +144,10 @@ public sealed class MissingProductsViewModel : ObservableObject
         catch (Exception ex) { Message = DescribeError(ex); }
         finally { busy = false; cancellation.Dispose(); cancellation = null; Refresh(); }
     }
+    public bool LastImportSucceeded { get; private set; }
     public async Task ImportExclusionsAsync(string path)
     {
+        LastImportSucceeded = false;
         if (busy || !inputsValid) return;
         busy = true; cancellation = new(); Refresh();
         try
@@ -146,6 +159,7 @@ public sealed class MissingProductsViewModel : ObservableObject
             exclusionsStore.Save(imported);
             exclusions = imported.Select(x => x.Trim()).Where(x => x.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
             exclusionsReady = true; ExclusionPath = path;
+            LastImportSucceeded = true;
             Recalculate();
             Message = $"Виключення збережено: {exclusions.Count:N0} артикулів. Повторне завантаження при запуску не потрібне.";
             PersistSettings();
@@ -185,8 +199,10 @@ public sealed class MissingProductsViewModel : ObservableObject
         result = MissingProductsSearch.Execute(supplier, site, exclusions);
         dirty = true;
     }
+    public bool LastExportSucceeded { get; private set; }
     public async Task ExportAsync(string path)
     {
+        LastExportSucceeded = false;
         if (!CanExport) return;
         try { if (checkedSignature != Signature()) { Invalidate(); return; } }
         catch (Exception ex) { Message = DescribeError(ex); return; }
@@ -197,6 +213,7 @@ public sealed class MissingProductsViewModel : ObservableObject
             var format = Settings.OutputFormat;
             var paths = new[] { SitePath, SupplierPath, ExclusionPath, exclusionsStore.FilePath, settingsStore.FilePath }.Where(x => !string.IsNullOrWhiteSpace(x)).ToArray();
             await Task.Run(() => files.Export(output, path, format, paths, cancellation.Token));
+            LastExportSucceeded = true;
             dirty = false; Message = $"Збережено {output.Count:N0} товарів: {path}"; PersistSettings();
         }
         catch (OperationCanceledException) { Message = "Збереження скасовано."; }
@@ -206,6 +223,7 @@ public sealed class MissingProductsViewModel : ObservableObject
     public void Cancel() => cancellation?.Cancel();
     public async Task ExportExclusionsAsync(string path)
     {
+        LastExportSucceeded = false;
         if (!CanExportExclusions) return;
         busy = true; cancellation = new(); Refresh();
         try
@@ -214,6 +232,7 @@ public sealed class MissingProductsViewModel : ObservableObject
             var format = Settings.OutputFormat;
             var paths = new[] { SitePath, SupplierPath, ExclusionPath, exclusionsStore.FilePath, settingsStore.FilePath };
             await Task.Run(() => files.ExportExclusions(output, path, format, paths, cancellation.Token));
+            LastExportSucceeded = true;
             Message = $"Збережено {output.Length:N0} виключень: {path}";
             PersistSettings();
         }

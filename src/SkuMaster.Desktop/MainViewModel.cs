@@ -65,6 +65,7 @@ public sealed class MainViewModel : ObservableObject
     public IReadOnlyList<StatusFilterOption> OldStatusOptions { get; private set; } = [AllOldStatuses];
     public IReadOnlyList<StatusFilterOption> NewStatusOptions { get; private set; } = [AllNewStatuses];
     public IReadOnlyList<StatusChange> Changes => filteredChanges;
+    public IReadOnlyList<StatusChange> AllRows => review?.Rows ?? [];
     public string FilterSummary => $"Показано {filteredChanges.Count:N0} із {state.Result?.Total ?? 0:N0} рядків · {FilterLabel}";
     public string FilterLabel => Filter switch { 1 => "Стали недоступними", 2 => "Знову доступні", 3 => "Перевірено", 4 => "Без змін", _ => "Усі зміни" };
     public bool NoMatches => HasResult && filteredChanges.Count == 0;
@@ -215,8 +216,10 @@ public sealed class MainViewModel : ObservableObject
         finally { cancellation.Dispose(); cancellation = null; Refresh(); }
     }
 
+    public bool LastExportSucceeded { get; private set; }
     public async Task SaveAsync(string path)
     {
+        LastExportSucceeded = false;
         if (!CanSave) return;
         if (checkedSignature != Signature()) { Invalidate(); Message = "Вхідні файли або налаштування змінилися. Повторіть перевірку."; return; }
         saving = true;
@@ -232,6 +235,7 @@ public sealed class MainViewModel : ObservableObject
             Message = "Зберігаємо результат…";
             await Task.Run(() => files.Export(output, path, export, paths, cancellation.Token));
             state.MarkSaved();
+            LastExportSucceeded = true;
             Message = $"Готово! Збережено {output.Rows.Count:N0} рядків: {path}";
             PersistSettings();
         }
@@ -250,7 +254,7 @@ public sealed class MainViewModel : ObservableObject
     {
         var settings = JsonSerializer.SerializeToNode(Settings)!;
         // Export scope selects already processed rows; it does not change their values.
-        settings[nameof(AppSettings.Export)]!.AsObject().Remove(nameof(ExportSettings.OnlyChanged));
+        settings.AsObject().Remove(nameof(AppSettings.Export));
         return settings.ToJsonString() + string.Join("|", new[] { SitePath, OneCPath, SupplierPath }.Select(path =>
         {
             var info = new FileInfo(path);

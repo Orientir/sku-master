@@ -17,6 +17,7 @@ $env:NUGET_PACKAGES = Join-Path $projectRoot '.tools/packages'
 if ($sdk -ne 'dotnet') { $env:DOTNET_ROOT = Split-Path $sdk -Parent }
 $publish = Join-Path $projectRoot "artifacts/publish/$Version"
 $release = Join-Path $projectRoot "artifacts/releases/$Version"
+& (Join-Path $PSScriptRoot 'build-ui.ps1')
 & $sdk publish src/SkuMaster.Desktop/SkuMaster.Desktop.csproj -c Release -r win-x64 --self-contained true -o $publish "-p:Version=$Version" "-p:UpdateRepository=$RepositoryUrl" "-p:RestoreConfigFile=$projectRoot/NuGet.Config" --nologo
 if ($LASTEXITCODE -ne 0) { throw 'Publish failed.' }
 $vpk = Join-Path $projectRoot '.tools/vpk/vpk.exe'
@@ -24,6 +25,6 @@ if (!(Test-Path $vpk)) {
     & $sdk tool install vpk --version 1.2.0 --tool-path .tools/vpk --configfile NuGet.Config
     if ($LASTEXITCODE -ne 0) { throw 'Velopack tool installation failed.' }
 }
-& $vpk pack --packId SkuMaster --packVersion $Version --packDir $publish --mainExe SkuMaster.exe --packTitle 'SKU Майстер' --packAuthors 'SKU Майстер' --icon (Join-Path $projectRoot 'src/SkuMaster.Desktop/Assets/app.ico') --outputDir $release
+& $vpk pack --packId SkuMaster --packVersion $Version --packDir $publish --mainExe SkuMaster.exe --packTitle 'SKU Майстер' --packAuthors 'SKU Майстер' --framework webview2 --icon (Join-Path $projectRoot 'src/SkuMaster.Desktop/Assets/app.ico') --outputDir $release
 if ($LASTEXITCODE -ne 0) { throw 'Installer packaging failed.' }
 Write-Output "Installer and portable archive: $release"

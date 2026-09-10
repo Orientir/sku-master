@@ -5,3 +5,5 @@ artifacts/
 .vs/
 .superpowers/
 *.user
+**/node_modules/
+src/SkuMaster.Ui/dist/
