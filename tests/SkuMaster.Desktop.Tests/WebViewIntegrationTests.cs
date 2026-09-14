@@ -110,8 +110,61 @@ public sealed class WebViewIntegrationTests
             await core.ExecuteScriptAsync("var input=document.querySelector('input[placeholder=\"Пошук за артикулом…\"]');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'EX26933');input.dispatchEvent(new Event('input',{bubbles:true}));");
             await Until(async () => await core.ExecuteScriptAsync("[...document.querySelectorAll('[role=tabpanel] li')].filter(e=>e.offsetParent!==null).length") == "1");
             Assert.Contains("EX26933", await core.ExecuteScriptAsync("document.body.innerText"));
+            await bridge.PickAsync("availability", "site", Path.Combine(dir, "site.csv"));
+            await bridge.PickAsync("availability", "supplier", Path.Combine(dir, "supplier.xlsx"));
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('button')].find(e=>e.textContent==='Перевірка наявності').click()");
+            await Until(async () => await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=availability-module] button')].find(e=>e.textContent.trim()==='Перевірити файли')?.disabled === false") == "true");
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=availability-module] button')].find(e=>e.textContent.trim()==='Перевірити файли').click()");
+            await Until(() => Task.FromResult(bridge.Availability.HasResult));
+            await Until(async () => await core.ExecuteScriptAsync("document.querySelectorAll('[data-testid=availability-module] tbody tr').length") == "4");
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=availability-module] button')].find(e=>e.textContent.startsWith('Немає у постачальника')).click()");
+            await Until(async () => await core.ExecuteScriptAsync("document.querySelectorAll('[data-testid=availability-module] tbody tr').length") == "3");
+            await core.ExecuteScriptAsync("document.querySelector('[data-testid=availability-module] thead input').click()");
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=availability-module] button')].find(e=>e.textContent==='Призначити обраним').click()");
+            await Until(() => Task.FromResult(bridge.Availability.Rows.Count(r=>r.Changed)==3));
+            Assert.All(bridge.Availability.Rows.Where(r=>!r.Available), r=>Assert.Equal("Снят с производства",r.Next));
+            reply = await Request("availability", "save", new { folder = dir, fileName = "availability-native", rows = new[] { 1,2,3,4 } });
+            Assert.False(reply.TryGetProperty("error", out _), reply.ToString());
+            Assert.Contains("Снят с производства", File.ReadAllText(Path.Combine(dir,"availability-native.csv")));
+            await Capture("web-availability-results");
+            // Scope by original website status, then select across pages (not merely rendered rows).
+            var largeSite = Path.Combine(dir, "availability-large.csv");
+            File.WriteAllLines(largeSite, Enumerable.Range(0,205).Select(i=>$"A{i:D4};Снят с производства").Append("other;Новинка"));
+            await bridge.PickAsync("availability", "site", largeSite);
+            reply = await Request("availability", "analyze");
+            Assert.False(reply.TryGetProperty("error", out _), reply.ToString());
+            await Until(async () => await core.ExecuteScriptAsync("document.querySelectorAll('[data-testid=availability-module] tbody tr').length") == "200");
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=availability-module] label')].find(e=>e.textContent.includes('Усі товари з файлу')).querySelector('input').click()");
+            await Until(async () => (await core.ExecuteScriptAsync("document.querySelector('[data-testid=availability-module]').innerText")).Contains("Показано 205"));
+            await core.ExecuteScriptAsync("document.querySelector('[data-testid=availability-module] thead input').click()");
+            await Until(async () => (await core.ExecuteScriptAsync("document.querySelector('[data-testid=availability-module]').innerText")).Contains("Обрано: 205"));
+            await core.ExecuteScriptAsync("var bulk=document.querySelector('select[aria-label=\"Масовий статус\"]');bulk.value='';bulk.dispatchEvent(new Event('change',{bubbles:true}));");
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=availability-module] button')].find(e=>e.textContent==='Призначити обраним').click()");
+            await Until(()=>Task.FromResult(bridge.Availability.Rows.Count(r=>r.Changed)==205));
+            Assert.Equal("Новинка", bridge.Availability.Rows.Single(r=>r.Sku=="other").Next);
+            Assert.All(bridge.Availability.Rows.Where(r=>r.Sku!="other"),r=>Assert.Equal("",r.Next));
+            await Tab("Як користуватися"); await Capture("web-availability-help");
+            var imagePath=Path.Combine(dir,"photo.png");
+            using(var picture=new SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(600,300,SixLabors.ImageSharp.Color.Red))
+                SixLabors.ImageSharp.ImageExtensions.SaveAsPng(picture,imagePath);
+            reply=await Request("images","loadFiles",new{paths=new[]{imagePath},options=new SkuMaster.Infrastructure.Images.ImageOptions{Size=1000,Format="png"}});
+            Assert.False(reply.TryGetProperty("error",out _),reply.ToString());
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('button')].find(e=>e.textContent==='Зображення').click()");
+            await Tab("Зображення");
+            await Until(async()=>await core.ExecuteScriptAsync("Boolean(document.querySelector('[data-testid=images-module] img'))")=="true");
+            await core.ExecuteScriptAsync("document.querySelector('[data-testid=images-module] img').closest('button').click()");
+            await Until(async()=>await core.ExecuteScriptAsync("Boolean(document.querySelector('[alt=Оригінал]'))")=="true");
+            await core.ExecuteScriptAsync("[...document.querySelectorAll('[data-testid=images-module] button')].find(e=>e.textContent==='Застосувати та переглянути').click()");
+            await Until(async()=>await core.ExecuteScriptAsync("Boolean(document.querySelector('[alt=\"Результат обробки\"]'))")=="true");
+            await Capture("web-images-preview");
+            var photoId=DesktopBridgeTests.Data(bridge.Images.Snapshot()).GetProperty("items")[0].GetProperty("id").GetString()!;
+            reply=await Request("images","export",new{folder=dir,ids=new[]{photoId}});
+            Assert.False(reply.TryGetProperty("error",out _),reply.ToString());
+            Assert.True(File.Exists(Path.Combine(dir,"photo_1.png")));
+            using(var picture=SixLabors.ImageSharp.Image.Load(Path.Combine(dir,"photo_1.png")))Assert.Equal(1000,picture.Width);
+            await Tab("Завантаження");
             window.Width = 840; window.Height = 640;
-            await Tab("Файли"); await Capture("web-compact-files");
+            await Capture("web-compact-files");
             Assert.Equal("true", await core.ExecuteScriptAsync("document.documentElement.scrollWidth <= window.innerWidth"));
             Assert.Equal("[]", await core.ExecuteScriptAsync("window.__uiErrors"));
             // Produce real snapshot data for optional browser-only visual QA; never bundled into the installer.
@@ -121,7 +174,7 @@ public sealed class WebViewIntegrationTests
         }
         finally
         {
-            bridge.Status.Invalidate(); bridge.Missing.Invalidate(); window.Close();
+            bridge.Status.Invalidate(); bridge.Missing.Invalidate(); bridge.Availability.Invalidate(); window.Close();
             // WebView child processes can hold their isolated profile briefly after disposal.
         }
     });

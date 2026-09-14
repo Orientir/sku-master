@@ -8,13 +8,13 @@ let sequence = 0;
 const subscribers = new Set<() => void>();
 const requests = new Map<number, { resolve: (value: any) => void; reject: (error: Error) => void }>();
 const host = window.chrome?.webview;
-const pendingSettings: Record<string, number> = { status: 0, missing: 0 };
+const pendingSettings: Record<string, number> = { status: 0, missing: 0, availability: 0 };
 let serverSnapshot: DesktopSnapshot | null = null;
 host?.addEventListener('message', ({ data }) => {
   if (data.snapshot) {
     serverSnapshot = data.snapshot;
     const next = { ...serverSnapshot };
-    for (const module of ['status','missing']) {
+    for (const module of ['status','missing','availability']) {
       if (pendingSettings[module] && snapshot) next[module] = { ...next[module], settings: snapshot[module].settings };
     }
     snapshot = next; subscribers.forEach(fn => fn());

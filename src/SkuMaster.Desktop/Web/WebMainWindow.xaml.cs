@@ -31,6 +31,8 @@ public partial class WebMainWindow : Window
         refresh.Tick += (_, _) => { refresh.Stop(); SendSnapshot(); };
         bridge.Status.PropertyChanged += Changed;
         bridge.Missing.PropertyChanged += Changed;
+        bridge.Availability.PropertyChanged += Changed;
+        bridge.Images.PropertyChanged += Changed;
     }
     private void Changed(object? sender, PropertyChangedEventArgs e)
     {
@@ -108,9 +110,20 @@ public partial class WebMainWindow : Window
             var data = root.GetProperty("data").Clone();
             object? value = null;
             if (module == "app") value = await AppAction(action, data);
+            else if(module=="images")
+            {
+                if(action=="pick")
+                {
+                    if(bridge.Images.IsBusy)throw new InvalidOperationException("Дочекайтеся завершення обробки.");
+                    var dialog=new OpenFileDialog{Filter="Зображення (*.jpg;*.jpeg;*.png;*.webp)|*.jpg;*.jpeg;*.png;*.webp",Multiselect=true,CheckFileExists=true};
+                    if(dialog.ShowDialog(this)==true)value=await bridge.Images.ExecuteAsync("loadFiles",JsonSerializer.SerializeToElement(new{paths=dialog.FileNames,options=data.GetProperty("options").Clone()}));
+                    else value=new{cancelled=true};
+                }
+                else value=await bridge.Images.ExecuteAsync(action,data);
+            }
             else if (action == "pick")
             {
-                if (module == "status" ? bridge.Status.IsBusy : bridge.Missing.IsBusy) throw new InvalidOperationException("Дочекайтеся завершення операції.");
+                if (module == "availability" ? bridge.Availability.IsBusy : module == "status" ? bridge.Status.IsBusy : bridge.Missing.IsBusy) throw new InvalidOperationException("Дочекайтеся завершення операції.");
                 var source = data.GetProperty("source").GetString()!;
                 var dialog = new OpenFileDialog { Filter = source == "site" ? "CSV (*.csv)|*.csv" : "Excel (*.xls;*.xlsx)|*.xls;*.xlsx", CheckFileExists = true };
                 if (dialog.ShowDialog(this) == true)
@@ -122,18 +135,18 @@ public partial class WebMainWindow : Window
             }
             else
             {
-                if (action is "save" or "saveExclusions")
+                if (action is "save" or "saveExclusions" or "saveReport")
                 {
                     var folder = data.GetProperty("folder").GetString() ?? "";
                     var name = data.GetProperty("fileName").GetString() ?? "";
                     if (string.IsNullOrWhiteSpace(name) || name.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0 || name is "." or "..")
                         throw new InvalidDataException("Вкажіть коректну назву файлу без шляху.");
                     if (!Path.IsPathFullyQualified(folder) || !Directory.Exists(folder)) throw new DirectoryNotFoundException("Оберіть наявну папку для збереження.");
-                    var format = module == "status" ? bridge.Status.Settings.Export.Format : bridge.Missing.Settings.OutputFormat;
+                    var format = module == "availability" ? bridge.Availability.Settings.Export.Format : module == "status" ? bridge.Status.Settings.Export.Format : bridge.Missing.Settings.OutputFormat;
                     var path = Path.Combine(folder, name.EndsWith("." + format, StringComparison.OrdinalIgnoreCase) ? name : name + "." + format);
                     if (File.Exists(path) && MessageBox.Show(this, $"Файл «{Path.GetFileName(path)}» уже існує. Замінити його?", "Збереження результату", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
                     { Post(new { id, value = new { cancelled = true } }); return; }
-                    data = JsonSerializer.SerializeToElement(new { path });
+                    data = module == "availability" ? JsonSerializer.SerializeToElement(new { path, rows = data.GetProperty("rows").Clone() }) : JsonSerializer.SerializeToElement(new { path });
                 }
                 await bridge.ExecuteAsync(module, action, data);
                 if (module == "missing" && action == "analyze") value = new { rows = bridge.Missing.AllReviewRows };
@@ -166,7 +179,7 @@ public partial class WebMainWindow : Window
                 await CheckUpdatesAsync(true);
                 break;
             case "restart":
-                if (bridge.IsBusy || bridge.Unsaved) throw new InvalidOperationException("Збережіть результат і завершіть обробку в обох модулях перед перезапуском.");
+                if (bridge.IsBusy || bridge.Unsaved) throw new InvalidOperationException("Збережіть результат і завершіть обробку в усіх модулях перед перезапуском.");
                 if (updateReady) { allowClose = true; updates.ApplyAndRestart(); }
                 break;
             default: throw new InvalidDataException("Невідома дія програми.");
@@ -188,7 +201,7 @@ public partial class WebMainWindow : Window
             {
                 if (manual && !bridge.IsBusy && !bridge.Unsaved) Post(new { @event = "updateReady" });
                 else Post(new { @event = "updateStatus", message = manual
-                    ? "Збережіть результат і завершіть обробку в обох модулях перед оновленням."
+                    ? "Збережіть результат і завершіть обробку в усіх модулях перед оновленням."
                     : "Оновлення завантажено. Натисніть «Оновлення», щоб встановити його." });
             }
         }

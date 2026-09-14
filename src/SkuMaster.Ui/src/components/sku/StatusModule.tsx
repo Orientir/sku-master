@@ -1,3 +1,4 @@
+import { HelpGuide } from "./shared";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { STATUSES, NO_STATUS, type Status } from "@/lib/sku-data";
@@ -500,28 +501,14 @@ export function StatusModule() {
       </TabsContent>
 
       <TabsContent value="help">
-        <Panel title="Як користуватися">
-          <ol className="space-y-3">
-            {[
+        <HelpGuide steps={[
               ["Завантажте файли", "Експорт із сайту (CSV), експорт із 1С та файл постачальника (XLS/XLSX)."],
               ["Перевірте", "Натисніть «Перевірити файли» — програма порівняє артикули та застосує правила."],
               ["Перегляньте фільтри", "Клацніть блок статистики або скористайтеся пошуком і фільтрами."],
               ["Скопіюйте артикул або змініть статус", "Клік по артикулу копіює його; новий статус можна змінити вручну."],
               ["Оберіть обсяг вивантаження", "Лише змінені товари чи повний файл."],
               ["Збережіть", "Натисніть «Зберегти результат…» і вкажіть місце для файлу."],
-            ].map(([t, d], i) => (
-              <li key={t} className="flex gap-3">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">
-                  {i + 1}
-                </span>
-                <div>
-                  <p className="text-xs font-semibold">{t}</p>
-                  <p className="text-xs text-muted-foreground">{d}</p>
-                </div>
-              </li>
-            ))}
-          </ol>
-        </Panel>
+            ]} />
       </TabsContent>
 
       <Dialog open={saveOpen} onOpenChange={setSaveOpen}>

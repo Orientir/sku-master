@@ -19,7 +19,7 @@ public sealed class DesktopBridgeTests
         WriteBook(Path.Combine(dir, "supplier.xlsx"), "002");
         var status = new MainViewModel(new SettingsStore(Path.Combine(dir, "settings.json")))
         { SitePath = Path.Combine(dir, "site.csv"), OneCPath = Path.Combine(dir, "onec.xlsx"), SupplierPath = Path.Combine(dir, "supplier.xlsx") };
-        return new DesktopBridge(status, MissingProductsWorkflowTests.CreateModel(dir));
+        return new DesktopBridge(status, MissingProductsWorkflowTests.CreateModel(dir), new SkuMaster.Desktop.Availability.AvailabilityViewModel(Path.Combine(dir, "availability-settings.json")), new SkuMaster.Desktop.Images.ImagesViewModel(Path.Combine(dir,"images")));
     }
     private static void WriteBook(string path, params string[] skus)
     {

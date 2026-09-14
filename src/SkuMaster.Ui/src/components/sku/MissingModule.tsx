@@ -1,3 +1,4 @@
+import { HelpGuide } from "./shared";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { command, useDesktop, saveFile, changeSetting } from "@/lib/bridge";
@@ -348,9 +349,7 @@ export function MissingModule() {
       </TabsContent>
 
       <TabsContent value="help">
-        <Panel title="Як користуватися">
-          <ol className="space-y-3">
-            {[
+        <HelpGuide steps={[
               ["Завантажте файли", "Додайте залишки сайту (CSV) та файл постачальника (XLS/XLSX): артикул і назва товару. За замовчуванням перший рядок містить дані. Колонки, перший рядок і аркуш можна змінити в налаштуваннях."],
               ["Додайте виключення за потреби", "Імпортуйте Excel зі списком артикулів, які не потрібно шукати. Список зберігається між запусками й оновленнями програми. Новий імпорт повністю замінює попередні виключення."],
               ["Знайдіть товари", "Натисніть «Знайти товари». Програма знайде товари постачальника, яких немає на сайті та у виключеннях."],
@@ -358,14 +357,7 @@ export function MissingModule() {
               ["Позначте зайві товари", "Галочка «Виключити» одразу зберігає артикул у виключеннях. Рядок залишається видимим до зміни фільтра або пошуку, щоб ви могли зняти випадкову галочку. Наступного разу цей товар не потрапить до списку для додавання."],
               ["Керуйте виключеннями", "На вкладці «Виключення» можна шукати й копіювати артикули, позначати їх для видалення та зберігати весь список у файл. Пошук працює по всіх виключеннях, незалежно від поточної сторінки."],
               ["Збережіть результат", "Оберіть CSV або XLSX у налаштуваннях, натисніть «Зберегти результат…» унизу та вкажіть папку й назву файлу. Будуть збережені артикули та назви всіх товарів для додавання на сайт — незалежно від фільтра, пошуку чи сторінки."],
-            ].map(([title, description], i) => (
-              <li key={title} className="flex gap-3">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">{i + 1}</span>
-                <div><p className="text-xs font-semibold">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div>
-              </li>
-            ))}
-          </ol>
-        </Panel>
+            ]} />
       </TabsContent>
 
       <Dialog open={saveOpen !== null} onOpenChange={(o) => !o && setSaveOpen(null)}>

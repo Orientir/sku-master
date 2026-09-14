@@ -233,7 +233,7 @@ public sealed class FileService
         return true;
     });
 
-    internal static void AtomicWrite(string path, Action<FileStream> write, CancellationToken token = default)
+    public static void AtomicWrite(string path, Action<FileStream> write, CancellationToken token = default)
     {
         var temp = Path.Combine(Path.GetDirectoryName(path)!, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
         try

@@ -207,3 +207,14 @@ export function Pages({count,page,setPage,hint}:{count:number;page:number;setPag
     {count>200 && <div className="flex shrink-0 items-center gap-2 whitespace-nowrap text-xs"><Button size="sm" variant="ghost" disabled={page===0} onClick={()=>setPage(page-1)}>Назад</Button><span>Сторінка {page+1} із {Math.ceil(count/200)}</span><Button size="sm" variant="ghost" disabled={(page+1)*200>=count} onClick={()=>setPage(page+1)}>Далі</Button></div>}
   </div>;
 }
+
+export function HelpGuide({ steps }: { steps: readonly (readonly [string, string])[] }) {
+  return <Panel title="Як користуватися">
+    <ol className="space-y-3">
+      {steps.map(([title, description], i) => <li key={title} className="flex gap-3">
+        <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-semibold text-primary-foreground">{i + 1}</span>
+        <div><p className="text-xs font-semibold">{title}</p><p className="text-xs text-muted-foreground">{description}</p></div>
+      </li>)}
+    </ol>
+  </Panel>;
+}

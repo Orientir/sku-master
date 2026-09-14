@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { StatusModule } from "@/components/sku/StatusModule";
 import { MissingModule } from "@/components/sku/MissingModule";
+import { AvailabilityModule } from "@/components/sku/AvailabilityModule";
+import { ImagesModule } from "@/components/sku/ImagesModule";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -21,7 +23,7 @@ import { cn } from "@/lib/utils";
 export default function App() {
   const desktop=useDesktop();
   const VERSION=desktop?.version ?? "";
-  const [module, setModule] = useState<"status" | "missing">("status");
+  const [module, setModule] = useState<"status" | "missing" | "availability" | "images">("status");
   const [closeOpen, setCloseOpen] = useState(false);
   const [restartOpen, setRestartOpen] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -79,6 +81,8 @@ export default function App() {
             [
               ["status", "Оновлення статусів"],
               ["missing", "Товари, яких немає на сайті"],
+              ["availability", "Перевірка наявності"],
+              ["images", "Зображення"],
             ] as const
           ).map(([id, label]) => (
             <button
@@ -103,10 +107,14 @@ export default function App() {
           <div className={module === "missing" ? "" : "hidden"}>
             <MissingModule />
           </div>
+          <div className={module === "availability" ? "" : "hidden"}>
+            <AvailabilityModule />
+          </div>
+          <div className={module === "images" ? "" : "hidden"}><ImagesModule /></div>
         </div>
 
         <footer className="flex items-center justify-between border-t border-border bg-panel px-4 py-2 text-[11px] text-muted-foreground">
-          <span>Файли обробляються локально. Інтернет потрібен лише для оновлень.</span>
+          <span>Обробка — локальна. Інтернет потрібен для завантажень та оновлень.</span>
           <span>Модулі працюють незалежно — перемикання зберігає поточний прогрес.</span>
         </footer>
       </div>

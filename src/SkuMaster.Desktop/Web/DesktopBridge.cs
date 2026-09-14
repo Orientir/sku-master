@@ -8,17 +8,23 @@ using SkuMaster.Desktop.MissingProducts;
 namespace SkuMaster.Desktop.Web;
 
 // The local UI receives explicit DTOs, never filesystem or .NET object access.
-public sealed class DesktopBridge(MainViewModel status, MissingProductsViewModel missing)
+public sealed class DesktopBridge(MainViewModel status, MissingProductsViewModel missing, SkuMaster.Desktop.Availability.AvailabilityViewModel? availability = null, SkuMaster.Desktop.Images.ImagesViewModel? images = null)
 {
     public static readonly JsonSerializerOptions Json = new() { PropertyNamingPolicy = JsonNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true };
     public MainViewModel Status { get; } = status;
     public MissingProductsViewModel Missing { get; } = missing;
-    public bool IsBusy => Status.IsBusy || Missing.IsBusy;
-    public bool Unsaved => Status.UnsavedResult || Missing.UnsavedResult;
+    public SkuMaster.Desktop.Availability.AvailabilityViewModel Availability { get; } = availability ?? new();
+    public SkuMaster.Desktop.Images.ImagesViewModel Images { get; } = images ?? new();
+    public bool IsBusy => Status.IsBusy || Missing.IsBusy || Availability.IsBusy || Images.IsBusy;
+    public bool Unsaved => Status.UnsavedResult || Missing.UnsavedResult || Availability.UnsavedResult || Images.Unsaved;
     public object Snapshot() => new
     {
         version = typeof(DesktopBridge).Assembly.GetName().Version!.ToString(3),
         documents = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
+        images = Images.Snapshot(),
+        availability = new { files = new { site = Availability.SitePath, supplier = Availability.SupplierPath }, settings = Availability.Settings,
+            busy = Availability.IsBusy, hasResult = Availability.HasResult, canSave = Availability.CanSave, unsaved = Availability.UnsavedResult,
+            message = Availability.Message, warnings = Availability.Warnings, rows = Availability.Rows },
         status = new
         {
             files = new { site = Status.SitePath, oneC = Status.OneCPath, supplier = Status.SupplierPath },
@@ -44,6 +50,7 @@ public sealed class DesktopBridge(MainViewModel status, MissingProductsViewModel
     };
     public async Task ExecuteAsync(string module, string action, JsonElement data)
     {
+        if (module == "availability") { await ExecuteAvailabilityAsync(action, data); return; }
         var isStatus = module == "status";
         if (module is not ("status" or "missing")) throw new InvalidDataException("Невідомий модуль.");
         if (action == "cancel") { if (isStatus) Status.Cancel(); else Missing.Cancel(); return; }
@@ -95,7 +102,14 @@ public sealed class DesktopBridge(MainViewModel status, MissingProductsViewModel
     }
     public async Task PickAsync(string module, string source, string path)
     {
-        if (module == "status")
+        if (module == "availability")
+        {
+            if (Availability.IsBusy) throw new InvalidOperationException("Дочекайтеся завершення операції.");
+            if (source == "site") Availability.SitePath = path;
+            else if (source == "supplier") Availability.SupplierPath = path;
+            else throw new InvalidDataException("Невідоме джерело.");
+        }
+        else if (module == "status")
         {
             if (Status.IsBusy) return;
             switch (source) { case "site": Status.SitePath = path; break; case "oneC": Status.OneCPath = path; break; case "supplier": Status.SupplierPath = path; break; default: throw new InvalidDataException("Невідоме джерело."); }
@@ -107,6 +121,28 @@ public sealed class DesktopBridge(MainViewModel status, MissingProductsViewModel
             switch (source) { case "site": Missing.SitePath = path; break; case "supplier": Missing.SupplierPath = path; break; case "exceptions": await Missing.ImportExclusionsAsync(path); if (!Missing.LastImportSucceeded) throw new InvalidOperationException(Missing.Message); break; default: throw new InvalidDataException("Невідоме джерело."); }
         }
         else throw new InvalidDataException("Невідомий модуль.");
+    }
+    private async Task ExecuteAvailabilityAsync(string action, JsonElement data)
+    {
+        if (action == "cancel") { Availability.Cancel(); return; }
+        if (Availability.IsBusy) throw new InvalidOperationException("Дочекайтеся завершення операції.");
+        switch (action)
+        {
+            case "analyze": await Availability.AnalyzeAsync(); break;
+            case "edit": Availability.Edit(data.GetProperty("rows").EnumerateArray().Select(x => x.GetInt32()).ToArray(), data.GetProperty("value").GetString()!); break;
+            case "save":
+            case "saveReport": await Availability.SaveAsync(data.GetProperty("path").GetString()!, data.GetProperty("rows").EnumerateArray().Select(x => x.GetInt32()).ToArray(), action == "saveReport"); break;
+            case "setting":
+                var node = JsonSerializer.SerializeToNode(Availability.Settings, Json)!.AsObject();
+                var section = data.GetProperty("section").GetString()!;
+                var key = data.GetProperty("key").GetString()!;
+                var target = section.Length == 0 ? node : node[section] as JsonObject;
+                if (target == null || !target.ContainsKey(key)) throw new InvalidDataException("Невідоме налаштування.");
+                target[key] = JsonNode.Parse(data.GetProperty("value").GetRawText());
+                Availability.ApplySettings(node.Deserialize<SkuMaster.Desktop.Availability.AvailabilitySettings>(Json)!);
+                break;
+            default: throw new InvalidDataException("Невідома дія.");
+        }
     }
     private void ApplyStatusSettings(JsonElement data)
     {

@@ -13,6 +13,12 @@ export interface StatusRow { row: number; sku: string; current: string; next: st
 export interface MissingRow { sku: string; name: string; excluded: boolean; onSite: boolean }
 interface ModuleState { busy: boolean; hasResult: boolean; canSave: boolean; unsaved: boolean; message: string; warnings: string[] }
 export interface DesktopSnapshot {
+  images: { defaults: ImageOptions; busy: boolean; message: string; engineReady: boolean; warnings: string[]; items: ImageItem[] };
+  availability: ModuleState & {
+    files: { site: string; supplier: string };
+    settings: { site: StatusSettings['csvInput']; skuColumn: number; statusColumn: number; supplier: MissingFileOptions; export: StatusSettings['export'] };
+    rows: { row: number; sku: string; current: string; next: string; available: boolean; changed: boolean }[];
+  };
   version: string;
   documents: string;
   status: ModuleState & {
@@ -31,3 +37,5 @@ export interface DesktopSnapshot {
     stats: { all: number; onsite: number; excluded: number; addable: number };
   };
 }
+export interface ImageOptions { size:number;mode:'crop'|'fit';format:'jpg'|'png'|'webp';quality:number;background:string;x:number;y:number;zoom:number;rotation:number;enhance:boolean }
+export interface ImageItem { id:string;name:string;width:number;height:number;thumbnail:string;options:ImageOptions;saved:boolean }
