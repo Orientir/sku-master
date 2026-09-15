@@ -7,6 +7,18 @@ namespace SkuMaster.Tests;
 public class ImageModuleTests
 {
     [Fact]
+    public void UkrainianShopUsesOnlyProductGallery()
+    {
+        var html="<img src='/logo.png'><div id='gallery'><img src='/badge.png'><UL class='photos' ID='productGallery'>\n<li><IMG src='/one.jpg'></li><li><img src='/two.jpg?a=1&amp;b=2'></li><img src='/one.jpg'></UL><div id='galleryPager'><img src='/pager.jpg'></div></div><img src='/related.jpg'>";
+        Assert.Equal(new[]{"https://maklta.com.ua/one.jpg","https://maklta.com.ua/two.jpg?a=1&b=2"},ImageDownloads.FindImages(html,new Uri("https://maklta.com.ua/product")));
+        Assert.Empty(ImageDownloads.FindImages("<img src='/logo.png'>",new Uri("https://www.maklta.com.ua/product")));
+    }
+    [Fact]
+    public void OtherSitesKeepGenericImageDiscovery()
+    {
+        Assert.Equal(new[]{"https://example.com/logo.png","https://example.com/tool.jpg"},ImageDownloads.FindImages("<img src='/logo.png'><a href='/tool.jpg'>",new Uri("https://example.com/product")));
+    }
+    [Fact]
     public void GalleryPrefersZoomImagesAndDeduplicates()
     {
         var html = "<img src='/logo.png'><a data-zoom-img='https://nl.makitamedia.com/tool.jpg'></a><img src='https://nl.makitamedia.com/tool.jpg'><a data-zoom-img='/second.png'></a>";

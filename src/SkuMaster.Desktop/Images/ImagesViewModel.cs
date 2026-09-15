@@ -58,6 +58,12 @@ public sealed class ImagesViewModel : ObservableObject
         if(action=="source"){var item=Find(Text("id"));return new{source=item.Preview,item.Width,item.Height};}
         if(action=="draft"){Find(Text("id")).Saved=false;Notify("");return null;}
         if(action=="remove"){items.Remove(Find(Text("id")));Notify("");return null;}
+        if(action=="removeSelected")
+        {
+            var removed=data.GetProperty("ids").EnumerateArray().Select(x=>Find(x.GetString()!)).ToHashSet();
+            items.RemoveAll(removed.Contains);
+            Message=$"Видалено з галереї: {removed.Count}. Файли на диску збережені.";Notify("");return null;
+        }
         return await Run(async token=>
         {
             if(action=="installEngine"){Message="Завантаження AI-компонента (~45 МБ)…";Notify("");await engine.InstallAsync(token);Message="AI-компонент готовий. Обробка виконується локально.";return null;}

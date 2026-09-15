@@ -36,6 +36,16 @@ public static class ImageDownloads
     }
     public static string[] FindImages(string html,Uri page)
     {
+        if(page.Host is "maklta.com.ua" or "www.maklta.com.ua")
+        {
+            // This shop keeps product photos in a separate list; the surrounding gallery also contains badges.
+            var productGallery=Regex.Match(html,"<ul\\b[^>]*\\bid\\s*=\\s*[\"']productGallery[\"'][^>]*>([\\s\\S]*?)</ul\\s*>",RegexOptions.IgnoreCase,TimeSpan.FromSeconds(2));
+            html=productGallery.Success?productGallery.Groups[1].Value:"";
+            return Regex.Matches(html,"<img\\b[^>]*?\\ssrc\\s*=\\s*[\"']([^\"']+)[\"']",RegexOptions.IgnoreCase,TimeSpan.FromSeconds(2))
+                .Select(m=>WebUtility.HtmlDecode(m.Groups[1].Value))
+                .Select(value=>Uri.TryCreate(page,value,out var uri)&&uri.Scheme=="https"?uri.AbsoluteUri:"")
+                .Where(x=>x.Length>0).Distinct().Take(60).ToArray();
+        }
         string[] Extract(string pattern)=>Regex.Matches(html,pattern,RegexOptions.IgnoreCase,TimeSpan.FromSeconds(2)).Select(m=>WebUtility.HtmlDecode(m.Groups[1].Value)).Select(value=>Uri.TryCreate(page,value,out var uri)&&uri.Scheme=="https"?uri.AbsoluteUri:"").Where(x=>x.Length>0).Distinct().Take(60).ToArray();
         var gallery=Extract("data-zoom-img\\s*=\\s*[\"']([^\"']+)[\"']");
         if(gallery.Length>0)return gallery;

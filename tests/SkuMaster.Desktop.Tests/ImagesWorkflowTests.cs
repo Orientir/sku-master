@@ -11,6 +11,29 @@ namespace SkuMaster.Desktop.Tests;
 public class ImagesWorkflowTests
 {
     [Fact]
+    public async Task RemoveSelectedIsAtomicAndPreservesOriginalFiles()
+    {
+        var dir=Directory.CreateTempSubdirectory("sku-remove-images-").FullName;
+        try
+        {
+            var path=Path.Combine(dir,"tool.png");
+            using(var image=new Image<Rgba32>(128,128,Color.Red))image.SaveAsPng(path);
+            var vm=new ImagesViewModel(Path.Combine(dir,"profile"));
+            await vm.ExecuteAsync("loadFiles",Data(new{paths=new[]{path,path,path},options=new ImageOptions()}));
+            var ids=Data(vm.Snapshot()).GetProperty("items").EnumerateArray().Select(x=>x.GetProperty("id").GetString()!).ToArray();
+            await Assert.ThrowsAsync<InvalidDataException>(()=>vm.ExecuteAsync("removeSelected",Data(new{ids=new[]{ids[0],"missing"}})));
+            Assert.Equal(3,Data(vm.Snapshot()).GetProperty("items").GetArrayLength());
+            await vm.ExecuteAsync("removeSelected",Data(new{ids=new[]{ids[0],ids[2],ids[0]}}));
+            Assert.Equal(ids[1],Data(vm.Snapshot()).GetProperty("items")[0].GetProperty("id").GetString());
+            Assert.True(vm.Unsaved);
+            await vm.ExecuteAsync("removeSelected",Data(new{ids=new[]{ids[1]}}));
+            Assert.Empty(Data(vm.Snapshot()).GetProperty("items").EnumerateArray());
+            Assert.False(vm.Unsaved);
+            Assert.True(File.Exists(path));
+        }
+        finally{Directory.Delete(dir,true);}
+    }
+    [Fact]
     public async Task DefaultsImportAndIndividualSettingsAreIsolatedAndExportNeverOverwrites()
     {
         var dir=Directory.CreateTempSubdirectory("sku-images-").FullName;
